@@ -1,0 +1,923 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Plano de Materiales</title>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+<style>
+  :root{
+    --bg:#0a1420; --panel:#0f1c2b; --line:#1c3040;
+    --ink:#e7eef4; --muted:#8fb0c4; --accent:#5cc8ff;
+    --mono:'JetBrains Mono','SF Mono',Consolas,monospace;
+    --serif:'Georgia','Times New Roman',serif;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--mono);padding:22px 20px 60px;}
+  .wrap{max-width:1180px;margin:0 auto;}
+  .titlerow{display:flex;align-items:baseline;gap:14px;margin-bottom:4px;flex-wrap:wrap;}
+  h1{font-family:var(--serif);font-weight:400;font-size:22px;margin:0;}
+  #planName{
+    font-family:var(--serif);font-size:20px;background:transparent;border:none;border-bottom:1px dashed var(--line);
+    color:var(--ink);padding:4px 2px;outline:none;min-width:260px;
+  }
+  #planName:focus{border-color:var(--accent);}
+  .sub{color:var(--muted);font-size:11.5px;margin:6px 0 16px;}
+
+  .projectbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px;}
+  .projectbar .status{font-size:11px;color:var(--muted);}
+
+  .overlay{position:fixed;inset:0;background:rgba(5,10,15,0.85);display:flex;align-items:center;justify-content:center;z-index:1000;}
+  .overlay.hidden{display:none;}
+  .overlay-box{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:24px 28px;width:480px;max-width:92vw;max-height:82vh;overflow:auto;}
+  .overlay-box h2{font-family:var(--serif);font-weight:400;font-size:20px;margin:0 0 4px;}
+  .overlay-box .sub2{color:var(--muted);font-size:11.5px;margin-bottom:16px;line-height:1.5;}
+  .projlist{display:flex;flex-direction:column;gap:8px;margin-bottom:18px;}
+  .projitem{display:flex;align-items:center;gap:8px;background:#0c1826;border:1px solid var(--line);border-radius:8px;padding:9px 12px;}
+  .projitem .pname{flex:1;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .projitem .pdate{font-size:10.5px;color:var(--muted);white-space:nowrap;}
+  .projitem button{padding:5px 9px;font-size:10.5px;}
+  .newProjectRow{display:flex;gap:8px;}
+  .newProjectRow input{flex:1;width:auto;}
+  .loadingmsg{color:var(--muted);font-size:12px;padding:10px 0;}
+  .overlay-footer{margin-top:14px;text-align:right;}
+
+  .toolbar{
+    display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;
+    background:var(--panel);border:1px solid var(--line);border-radius:10px;
+    padding:12px 16px;margin-bottom:12px;
+  }
+  .tgroup{display:flex;flex-direction:column;gap:5px;}
+  .tgroup label{font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);}
+  select,input,button{font-family:var(--mono);}
+  input[type=number],input[type=text]{
+    background:#0c1826;border:1px solid var(--line);color:var(--ink);
+    padding:7px 9px;border-radius:6px;font-size:12.5px;outline:none;width:70px;
+  }
+  .modebtn{padding:8px 12px;border-radius:6px;border:1px solid var(--line);background:#0c1826;color:var(--muted);cursor:pointer;font-size:12px;}
+  .modebtn.active{border-color:var(--accent);color:var(--accent);background:rgba(92,200,255,0.1);}
+  .smallbtn{padding:7px 12px;border-radius:6px;border:1px solid var(--line);background:#0c1826;color:var(--muted);cursor:pointer;font-size:11.5px;}
+  .smallbtn:hover{color:var(--ink);border-color:#2a4a5f;}
+  .smallbtn.danger{border-color:#ff6a4d;color:#ff6a4d;}
+  .zoomgroup{display:flex;gap:4px;}
+  .zoomgroup button{width:30px;height:30px;border-radius:6px;border:1px solid var(--line);background:#0c1826;color:var(--ink);cursor:pointer;font-size:14px;}
+  .pangroup{display:grid;grid-template-columns:repeat(3,26px);grid-template-rows:repeat(2,26px);gap:2px;}
+  .pangroup button{border-radius:5px;border:1px solid var(--line);background:#0c1826;color:var(--muted);cursor:pointer;font-size:12px;}
+  .pangroup button:hover{color:var(--ink);}
+
+  .matlist{display:flex;gap:6px;flex-wrap:wrap;}
+  .matchip{display:flex;align-items:center;gap:6px;padding:5px 9px;border-radius:6px;border:1px solid var(--line);background:#0c1826;cursor:pointer;font-size:11.5px;color:var(--muted);}
+  .matchip.active{border-color:var(--ink);color:var(--ink);}
+  .swatch{width:14px;height:4px;border-radius:2px;display:inline-block;}
+  .sqicon{display:inline-flex;align-items:center;justify-content:center;width:12px;height:12px;font-size:8px;font-weight:700;border-width:1.5px;border-style:solid;}
+
+  .main{display:flex;gap:16px;align-items:flex-start;}
+  .canvaswrap{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px;}
+  .viewport{width:740px;height:560px;overflow:auto;background:#0a1420;border-radius:6px;}
+  svg{display:block;cursor:crosshair;}
+  .hint{font-size:11px;color:var(--muted);margin-top:8px;min-height:14px;}
+  .hint.warn{color:#ff9e4d;}
+  #printArea{display:none;}
+
+  .legend{flex:0 0 340px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px;}
+  .legend h2{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:0 0 10px;}
+  .legend table{width:100%;border-collapse:collapse;font-size:12px;}
+  .legend th{text-align:left;color:var(--muted);font-size:9.5px;text-transform:uppercase;padding:4px 6px;border-bottom:1px solid var(--line);}
+  .legend td{padding:6px 6px;border-bottom:1px solid #132433;}
+  .legend .num{text-align:right;font-weight:700;color:var(--accent);white-space:nowrap;}
+  .legend .empty{color:var(--muted);font-size:11.5px;padding:10px 0;}
+  .legend tr.derived td{color:var(--muted);font-style:italic;}
+  .legend input[type=checkbox]{width:15px;height:15px;cursor:pointer;}
+
+  @media print{
+    @page{ size:A4 portrait; margin:8mm; }
+    html,body{background:#fff !important;color:#000 !important;padding:0 !important;}
+    .toolbar{display:none !important;}
+    .projectbar{display:none !important;}
+    .overlay{display:none !important;}
+    #planName{border-bottom:1px solid #999 !important;color:#000 !important;}
+    .sub{display:none !important;}
+    .main{flex-direction:column !important;}
+    .canvaswrap,.legend{background:#fff !important;border-color:#ccc !important;}
+    .viewport{display:none !important;}
+    #printArea{display:block !important;}
+    #printArea svg{display:block;}
+    .legend{flex:none !important;width:100% !important;margin-top:5mm;}
+    .legend .num{color:#000 !important;}
+    .hint{display:none !important;}
+  }
+</style>
+</head>
+<body>
+
+<div class="overlay" id="projectOverlay">
+  <div class="overlay-box">
+    <h2>Mis proyectos</h2>
+    <div class="sub2">Se guardan en la nube (Firebase), ligados a este generador. Puedes abrirlos desde cualquier navegador usando esta misma URL.</div>
+    <div class="projlist" id="projList"><div class="loadingmsg">Cargando...</div></div>
+    <div class="newProjectRow">
+      <input type="text" id="newProjectNameInput" placeholder="Nombre del nuevo proyecto">
+      <button class="smallbtn" onclick="createNewProject()">+ Crear</button>
+    </div>
+    <div class="overlay-footer">
+      <button class="smallbtn" onclick="closeOverlaySkip()">Trabajar sin guardar →</button>
+    </div>
+  </div>
+</div>
+
+<div class="wrap">
+  <div class="titlerow">
+    <h1>Plano de Materiales</h1>
+    <input type="text" id="planName" placeholder="Nombre del plano (ej. Villanueva del Río)">
+  </div>
+  <div class="sub">Vista en planta a escala real (1 cuadro = 1 metro). Ctrl+Z para deshacer, Ctrl+S para guardar.</div>
+
+  <div class="projectbar">
+    <button class="smallbtn" onclick="openProjectPicker()">📁 Mis proyectos</button>
+    <button class="smallbtn" onclick="saveCurrentProject()">💾 Guardar</button>
+    <button class="smallbtn" onclick="renameCurrentProject()">✎ Renombrar</button>
+    <span class="status" id="saveStatus">Trabajando sin guardar en la nube.</span>
+  </div>
+
+  <div class="toolbar">
+    <div class="tgroup" style="flex:1">
+      <label>Categoría</label>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;">
+        <button class="modebtn active" id="btn_postes" onclick="setMode('postes')">Postes</button>
+        <button class="modebtn" id="btn_iluminacion" onclick="setMode('iluminacion')">Iluminación</button>
+        <button class="modebtn" id="btn_mamparas" onclick="setMode('mamparas')">Mamparas</button>
+        <button class="modebtn" id="btn_puertas" onclick="setMode('puertas')">Puertas</button>
+        <button class="modebtn" id="btn_cartelas" onclick="setMode('cartelas')">Cartelas</button>
+        <button class="modebtn" id="btn_tirantas" onclick="setMode('tirantas')">Tirantas</button>
+        <button class="modebtn" id="btn_borrar" onclick="setMode('borrar')">✕ Borrar</button>
+      </div>
+    </div>
+    <div class="tgroup">
+      <label>Ancho / Alto (m)</label>
+      <div style="display:flex;gap:6px;align-items:center;">
+        <input type="number" id="gridW" value="50" min="5" step="1">
+        <span style="color:var(--muted)">×</span>
+        <input type="number" id="gridH" value="60" min="5" step="1">
+        <button class="smallbtn" onclick="applyGridSize()">Aplicar</button>
+      </div>
+    </div>
+    <div class="tgroup">
+      <label>Zoom</label>
+      <div class="zoomgroup">
+        <button onclick="changeZoom(-0.15)">−</button>
+        <button onclick="changeZoom(0.15)">+</button>
+      </div>
+    </div>
+    <div class="tgroup">
+      <label>Mover</label>
+      <div class="pangroup">
+        <span></span><button onclick="pan(0,-150)">↑</button><span></span>
+        <button onclick="pan(-150,0)">←</button><button onclick="pan(0,0)" title="centrar">•</button><button onclick="pan(150,0)">→</button>
+      </div>
+    </div>
+    <div class="tgroup">
+      <label>&nbsp;</label>
+      <div style="display:flex;gap:6px;">
+        <button class="smallbtn" id="undoBtn">↶ Deshacer</button>
+        <button class="smallbtn" id="printBtn">Imprimir / PDF (A4)</button>
+        <button class="smallbtn" id="clearBtn">Vaciar plano</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toolbar">
+    <div class="tgroup" style="flex:1">
+      <label id="matListLabel">Símbolos</label>
+      <div class="matlist" id="matList"></div>
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="canvaswrap">
+      <div class="viewport" id="viewport">
+        <svg id="canvas"></svg>
+      </div>
+      <div id="printArea"></div>
+      <div class="hint" id="hintText">Clic sobre la cuadrícula para colocar el símbolo seleccionado.</div>
+    </div>
+    <div class="legend">
+      <h2>Leyenda / recuento de material</h2>
+      <table>
+        <thead><tr><th></th><th>Material</th><th style="text-align:right">Cantidad</th><th style="text-align:center">Check</th></tr></thead>
+        <tbody id="legendBody"></tbody>
+      </table>
+      <div class="empty" id="legendEmpty">Aún no hay elementos dibujados.</div>
+    </div>
+  </div>
+</div>
+
+<script>
+const UNIT = 20;
+let COLS = 50, ROWS = 60;
+let zoom = 0.9;
+
+// ---------- Firebase: guardado / carga de proyectos ----------
+const firebaseConfig = {
+  apiKey: "AIzaSyAZy204tvdIZujFow2eyHyj4ig8XnO4T5M",
+  authDomain: "generador-de-planos.firebaseapp.com",
+  projectId: "generador-de-planos",
+  storageBucket: "generador-de-planos.firebasestorage.app",
+  messagingSenderId: "173869278740",
+  appId: "1:173869278740:web:1b1cfc0fa9fa55fd69e901"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+
+let currentProjectId = null;
+let currentProjectName = '';
+
+function setSaveStatus(msg){
+  const el = document.getElementById('saveStatus');
+  if(el) el.textContent = msg;
+}
+
+function serializeState(){
+  return JSON.stringify({
+    planName: document.getElementById('planName').value,
+    COLS, ROWS, elements
+  });
+}
+
+function applyState(stateStr){
+  let state;
+  try{ state = JSON.parse(stateStr); }catch(e){ state = {planName:'', COLS:50, ROWS:60, elements:[]}; }
+  document.getElementById('planName').value = state.planName || '';
+  COLS = state.COLS || 50;
+  ROWS = state.ROWS || 60;
+  elements = state.elements || [];
+  document.getElementById('gridW').value = COLS;
+  document.getElementById('gridH').value = ROWS;
+  let maxId = 0;
+  elements.forEach(el=>{
+    const n = parseInt((el.id||'').replace('e',''),10);
+    if(!isNaN(n) && n>maxId) maxId = n;
+  });
+  elIdCounter = maxId+1;
+  undoStack = [];
+  lineStart = null;
+  applyZoomStyle();
+  render(); renderLegend(); updateHint();
+}
+
+function openProjectPicker(){
+  document.getElementById('projectOverlay').classList.remove('hidden');
+  refreshProjectList();
+}
+function closeOverlaySkip(){
+  document.getElementById('projectOverlay').classList.add('hidden');
+}
+
+function refreshProjectList(){
+  const wrap = document.getElementById('projList');
+  wrap.innerHTML = '<div class="loadingmsg">Cargando...</div>';
+  db.collection('planos').orderBy('updatedAt','desc').get().then(snap=>{
+    if(snap.empty){
+      wrap.innerHTML = '<div class="loadingmsg">Aún no tienes proyectos guardados.</div>';
+      return;
+    }
+    wrap.innerHTML = '';
+    snap.forEach(doc=>{
+      const d = doc.data();
+      const item = document.createElement('div');
+      item.className = 'projitem';
+      const fecha = (d.updatedAt && d.updatedAt.toDate) ? d.updatedAt.toDate().toLocaleString() : '';
+      const nameSpan = document.createElement('span');
+      nameSpan.className = 'pname';
+      nameSpan.textContent = d.name || '(sin nombre)';
+      const dateSpan = document.createElement('span');
+      dateSpan.className = 'pdate';
+      dateSpan.textContent = fecha;
+      const openBtn = document.createElement('button');
+      openBtn.className='smallbtn'; openBtn.textContent='Abrir';
+      openBtn.onclick = ()=>openProject(doc.id, d);
+      const delBtn = document.createElement('button');
+      delBtn.className='smallbtn danger'; delBtn.textContent='Eliminar';
+      delBtn.onclick = ()=>deleteProject(doc.id);
+      item.appendChild(nameSpan);
+      item.appendChild(dateSpan);
+      item.appendChild(openBtn);
+      item.appendChild(delBtn);
+      wrap.appendChild(item);
+    });
+  }).catch(err=>{
+    wrap.innerHTML = '<div class="loadingmsg">Error al cargar: '+err.message+'</div>';
+  });
+}
+
+function openProject(id, data){
+  currentProjectId = id;
+  currentProjectName = data.name || '';
+  applyState(data.state || '{}');
+  document.getElementById('projectOverlay').classList.add('hidden');
+  const fecha = (data.updatedAt && data.updatedAt.toDate) ? data.updatedAt.toDate().toLocaleString() : '';
+  setSaveStatus('Proyecto: '+currentProjectName+(fecha?(' — último guardado '+fecha):''));
+}
+
+function createNewProject(){
+  const nameInput = document.getElementById('newProjectNameInput');
+  const name = nameInput.value.trim();
+  if(!name){ alert('Ponle un nombre al proyecto.'); return; }
+  const blankState = JSON.stringify({planName:name, COLS:50, ROWS:60, elements:[]});
+  db.collection('planos').add({
+    name,
+    state: blankState,
+    createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+  }).then(docRef=>{
+    currentProjectId = docRef.id;
+    currentProjectName = name;
+    applyState(blankState);
+    nameInput.value = '';
+    document.getElementById('projectOverlay').classList.add('hidden');
+    setSaveStatus('Proyecto: '+name+' — creado ahora mismo.');
+  }).catch(err=>alert('No se pudo crear el proyecto: '+err.message));
+}
+
+function saveCurrentProject(){
+  if(!currentProjectId){
+    const name = document.getElementById('planName').value.trim() || 'Proyecto sin nombre';
+    if(!confirm('Este plano aún no está guardado en la nube. ¿Crear un nuevo proyecto llamado "'+name+'"?')) return;
+    db.collection('planos').add({
+      name,
+      state: serializeState(),
+      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    }).then(docRef=>{
+      currentProjectId = docRef.id;
+      currentProjectName = name;
+      setSaveStatus('Guardado como "'+name+'" — '+new Date().toLocaleString());
+    }).catch(err=>alert('Error al guardar: '+err.message));
+    return;
+  }
+  const name = document.getElementById('planName').value.trim() || currentProjectName || 'Proyecto sin nombre';
+  currentProjectName = name;
+  db.collection('planos').doc(currentProjectId).update({
+    name,
+    state: serializeState(),
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+  }).then(()=>{
+    setSaveStatus('Guardado — '+new Date().toLocaleString());
+  }).catch(err=>alert('Error al guardar: '+err.message));
+}
+
+function renameCurrentProject(){
+  if(!currentProjectId){ alert('Primero guarda el proyecto (botón Guardar) para poder renombrarlo.'); return; }
+  const nuevo = prompt('Nuevo nombre del proyecto:', currentProjectName);
+  if(!nuevo || !nuevo.trim()) return;
+  currentProjectName = nuevo.trim();
+  document.getElementById('planName').value = currentProjectName;
+  db.collection('planos').doc(currentProjectId).update({ name: currentProjectName })
+    .then(()=>setSaveStatus('Renombrado a "'+currentProjectName+'"'))
+    .catch(err=>alert('Error al renombrar: '+err.message));
+}
+
+function deleteProject(id){
+  if(!confirm('¿Eliminar este proyecto permanentemente? No se puede deshacer.')) return;
+  db.collection('planos').doc(id).delete().then(()=>{
+    if(id===currentProjectId){ currentProjectId=null; currentProjectName=''; setSaveStatus('Trabajando sin guardar en la nube.'); }
+    refreshProjectList();
+  }).catch(err=>alert('Error al eliminar: '+err.message));
+}
+
+document.addEventListener('keydown', (e)=>{
+  if((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==='s'){
+    e.preventDefault();
+    saveCurrentProject();
+  }
+});
+// ---------- fin bloque Firebase ----------
+
+const categories = [
+  {id:'postes', kind:'punto'},
+  {id:'iluminacion', kind:'punto'},
+  {id:'mamparas', kind:'linea'},
+  {id:'puertas', kind:'linea'},
+  {id:'cartelas', kind:'linea'},
+  {id:'tirantas', kind:'linea'},
+];
+function categoryKind(id){ const c = categories.find(c=>c.id===id); return c ? c.kind : null; }
+
+// extras: cada entrada suma a otro concepto de la lista.
+//  - targetId: fusiona el conteo directamente dentro de OTRO material real ya existente.
+//  - label + insertAfterId: crea/alimenta una fila derivada virtual, insertada justo
+//    debajo del material indicado en insertAfterId.
+const pointMaterials = [
+  {id:'p1', name:'Poste 3m', shape:'cross', color:'#ff2d2d', isPoste:true, category:'postes'},
+  {id:'p2', name:'Poste 2.5m', shape:'dot', color:'#ff2d2d', isPoste:true, category:'postes'},
+  {id:'p3', name:'LED', shape:'led', color:'#ffe14d', isPoste:false, category:'iluminacion',
+    extras:[{label:'Salida a cuadro', factor:1, insertAfterId:'p3'}]},
+  {id:'p4', name:'Cuadro', shape:'cuadro', color:'#9aa5ad', isPoste:false, category:'iluminacion', centerCell:true},
+];
+const lineMaterials = [
+  {id:'l1', name:'Tiranta 2m', color:'#4fd1ff', len:2, unitsOnly:true, category:'tirantas'},
+  {id:'l2', name:'Tiranta 3m', color:'#2fd9a0', len:3, unitsOnly:true, category:'tirantas'},
+  {id:'l3', name:'Tiranta 4m', color:'#4d79ff', len:4, unitsOnly:true, category:'tirantas'},
+  {id:'l4a', name:'Mampara 1C', color:'#c026d3', len:1, autoConnect:true, unitsOnly:true, category:'mamparas',
+    extras:[{label:'Mainel 1m', factor:2, insertAfterId:'l4b'}]},
+  {id:'l4b', name:'Mampara 2C', color:'#65d600', len:1, autoConnect:true, unitsOnly:true, category:'mamparas',
+    extras:[{label:'Mainel 1m', factor:2, insertAfterId:'l4b'}]},
+  {id:'l5s', name:'Cartela pequeña', color:'#4a4a4a', len:1, unitsOnly:true, category:'cartelas', strokeWidth:4},
+  {id:'l5', name:'Cartela 1m', color:'#2b6fff', len:1, unitsOnly:true, category:'cartelas',
+    extras:[{label:'Mainel 1m', factor:2, insertAfterId:'l4b'}]},
+  {id:'l6', name:'Cartela 2m', color:'#ff8a00', len:2, unitsOnly:true, category:'cartelas',
+    extras:[{targetId:'l1', factor:2}]},
+  {id:'l7', name:'Cartela 3m', color:'#00b368', len:3, unitsOnly:true, category:'cartelas'},
+  {id:'l8', name:'Cartela 4m', color:'#d6249b', len:4, unitsOnly:true, category:'cartelas'},
+  {id:'d1', name:'Puerta derecha', color:'#14b8a6', autoConnect:true, unitsOnly:true, category:'puertas',
+    renderAs:'door', side:'derecha', extras:[{label:'Mainel 1m', factor:2, insertAfterId:'l4b'}]},
+  {id:'d2', name:'Puerta izquierda', color:'#f43f5e', autoConnect:true, unitsOnly:true, category:'puertas',
+    renderAs:'door', side:'izquierda', extras:[{label:'Mainel 1m', factor:2, insertAfterId:'l4b'}]},
+];
+const allMaterials = [...pointMaterials, ...lineMaterials];
+const displayOrder = ['p1','p2','p3','p4','l1','l2','l3','l4a','l4b','d1','d2','l5s','l5','l6','l7','l8'];
+function matById(id){ return allMaterials.find(m=>m.id===id); }
+
+let selected = { postes:'p1', iluminacion:'p3', mamparas:'l4a', puertas:'d1', cartelas:'l5', tirantas:'l1' };
+let mode = 'postes';
+let elements = [];
+let elIdCounter = 1;
+let lineStart = null;
+let hintTimeout = null;
+let undoStack = [];
+
+const svg = document.getElementById('canvas');
+const viewport = document.getElementById('viewport');
+const hintEl = document.getElementById('hintText');
+
+function snapshotUndo(){
+  undoStack.push(JSON.parse(JSON.stringify(elements)));
+  if(undoStack.length>60) undoStack.shift();
+}
+function undo(){
+  if(undoStack.length===0){ flashHint('No hay nada que deshacer.'); return; }
+  elements = undoStack.pop();
+  lineStart = null;
+  render(); renderLegend();
+}
+document.addEventListener('keydown', (e)=>{
+  if((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==='z'){
+    e.preventDefault();
+    undo();
+  }
+});
+
+function snap(v){ return Math.round(v/UNIT)*UNIT; }
+function snapCellCenter(v){
+  const idx = Math.min(Math.max(Math.floor(v/UNIT),0), 100000);
+  return idx*UNIT + UNIT/2;
+}
+
+function applyZoomStyle(){
+  svg.setAttribute('viewBox', `0 0 ${COLS*UNIT} ${ROWS*UNIT}`);
+  svg.style.width = (COLS*UNIT*zoom) + 'px';
+  svg.style.height = (ROWS*UNIT*zoom) + 'px';
+}
+function changeZoom(delta){
+  zoom = Math.min(2.5, Math.max(0.2, +(zoom+delta).toFixed(2)));
+  applyZoomStyle();
+}
+function pan(dx,dy){
+  if(dx===0 && dy===0){ viewport.scrollTo({left:0, top:0, behavior:'smooth'}); return; }
+  viewport.scrollBy({left:dx, top:dy, behavior:'smooth'});
+}
+
+function applyGridSize(){
+  const w = Math.max(5, parseInt(document.getElementById('gridW').value)||50);
+  const h = Math.max(5, parseInt(document.getElementById('gridH').value)||60);
+  if(elements.length) snapshotUndo();
+  COLS = w; ROWS = h;
+  elements = [];
+  applyZoomStyle();
+  render(); renderLegend();
+}
+
+function drawGrid(forPrint){
+  const majorColor = forPrint ? '#bfbfbf' : '#3f7fa3';
+  const minorColor = forPrint ? '#e6e6e6' : '#1f3f54';
+  let s = '';
+  for(let c=0;c<=COLS;c++){
+    const major = c%5===0;
+    s += `<line x1="${c*UNIT}" y1="0" x2="${c*UNIT}" y2="${ROWS*UNIT}" stroke="${major?majorColor:minorColor}" stroke-width="${major?1.4:0.8}"/>`;
+  }
+  for(let r=0;r<=ROWS;r++){
+    const major = r%5===0;
+    s += `<line x1="0" y1="${r*UNIT}" x2="${COLS*UNIT}" y2="${r*UNIT}" stroke="${major?majorColor:minorColor}" stroke-width="${major?1.4:0.8}"/>`;
+  }
+  return `<g>${s}</g>`;
+}
+
+function drawPointSymbol(m, x, y, id){
+  if(m.shape==='cross'){
+    return `<g data-id="${id}" style="cursor:pointer">
+      <line x1="${x-4}" y1="${y-4}" x2="${x+4}" y2="${y+4}" stroke="${m.color}" stroke-width="2" stroke-linecap="round"/>
+      <line x1="${x-4}" y1="${y+4}" x2="${x+4}" y2="${y-4}" stroke="${m.color}" stroke-width="2" stroke-linecap="round"/>
+    </g>`;
+  } else if(m.shape==='dot'){
+    return `<circle data-id="${id}" cx="${x}" cy="${y}" r="3" fill="${m.color}" style="cursor:pointer"/>`;
+  } else if(m.shape==='led'){
+    let rays='';
+    for(let a=0;a<360;a+=60){
+      const rad=a*Math.PI/180;
+      const x1=x+Math.cos(rad)*7, y1=y+Math.sin(rad)*7;
+      const x2=x+Math.cos(rad)*12, y2=y+Math.sin(rad)*12;
+      rays += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${m.color}" stroke-width="2" stroke-linecap="round"/>`;
+    }
+    return `<g data-id="${id}" style="cursor:pointer">${rays}<circle cx="${x}" cy="${y}" r="5" fill="${m.color}" stroke="#0a1420" stroke-width="1"/></g>`;
+  } else if(m.shape==='cuadro'){
+    return `<g data-id="${id}" style="cursor:pointer">
+      <rect x="${x-5}" y="${y-5}" width="10" height="10" fill="none" stroke="${m.color}" stroke-width="1.6"/>
+      <text x="${x}" y="${y+3}" font-size="8" font-weight="700" fill="${m.color}" text-anchor="middle" font-family="monospace">C</text>
+    </g>`;
+  }
+  return '';
+}
+
+function drawDoorSymbol(m, x1, y1, x2, y2, id){
+  const dx = x2-x1, dy = y2-y1;
+  const L = Math.hypot(dx, dy);
+  if(L===0) return '';
+  const ux = dx/L, uy = dy/L;
+  let px, py, sweepFlag;
+  if(m.side==='derecha'){ px=-uy; py=ux; sweepFlag=1; }
+  else { px=uy; py=-ux; sweepFlag=0; }
+  const leafX = x1+px*L, leafY = y1+py*L;
+  return `<g data-id="${id}" style="cursor:pointer">
+    <line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${m.color}" stroke-width="1" stroke-dasharray="3,2"/>
+    <line x1="${x1}" y1="${y1}" x2="${leafX}" y2="${leafY}" stroke="${m.color}" stroke-width="1.3"/>
+    <path d="M ${leafX} ${leafY} A ${L} ${L} 0 0 ${sweepFlag} ${x2} ${y2}" fill="none" stroke="${m.color}" stroke-width="1"/>
+  </g>`;
+}
+
+function buildElementsSvgContent(forPrint){
+  let content = drawGrid(!!forPrint);
+  content += '<g id="elLayer">';
+  elements.forEach(el=>{
+    const m = matById(el.matId);
+    if(!m) return;
+    if(el.type==='punto'){
+      content += drawPointSymbol(m, el.x, el.y, el.id);
+    } else if(m.renderAs==='door'){
+      content += drawDoorSymbol(m, el.x1, el.y1, el.x2, el.y2, el.id);
+    } else {
+      const sw = m.strokeWidth || 2;
+      content += `<line data-id="${el.id}" x1="${el.x1}" y1="${el.y1}" x2="${el.x2}" y2="${el.y2}" stroke="${m.color}" stroke-width="${sw}" stroke-linecap="round" style="cursor:pointer"/>`;
+    }
+  });
+  content += '</g>';
+  return content;
+}
+
+function render(){
+  let content = buildElementsSvgContent(false);
+  if(lineStart){
+    content += `<circle cx="${lineStart.x}" cy="${lineStart.y}" r="5" fill="none" stroke="#e7eef4" stroke-width="1.5"/>`;
+  }
+  content += `<line id="previewLine" x1="0" y1="0" x2="0" y2="0" stroke="#e7eef4" stroke-width="2" stroke-dasharray="5,4" visibility="hidden" style="pointer-events:none"/>`;
+  svg.innerHTML = content;
+
+  svg.querySelectorAll('[data-id]').forEach(node=>{
+    node.addEventListener('click', (e)=>{
+      if(mode==='borrar'){
+        e.stopPropagation();
+        const id = node.getAttribute('data-id');
+        snapshotUndo();
+        elements = elements.filter(el=>el.id!==id);
+        render(); renderLegend();
+      }
+    });
+  });
+}
+
+function iconFor(m){
+  if(m.shape==='cross') return '✕';
+  if(m.shape==='dot') return '•';
+  if(m.shape==='led') return '✺';
+  if(m.shape==='cuadro') return `<span class="sqicon" style="border-color:${m.color};color:${m.color};">C</span>`;
+  return '';
+}
+
+function renderMatList(){
+  const list = document.getElementById('matList');
+  const label = document.getElementById('matListLabel');
+  list.innerHTML = '';
+  if(mode==='borrar'){
+    label.textContent = 'Borrar';
+    list.innerHTML = '<span style="color:var(--muted);font-size:11.5px;">Haz clic sobre un símbolo o línea del plano para eliminarlo.</span>';
+    return;
+  }
+  const kind = categoryKind(mode);
+  const isPunto = kind==='punto';
+  label.textContent = mode.charAt(0).toUpperCase()+mode.slice(1);
+  const source = allMaterials.filter(m=>m.category===mode);
+  source.forEach(m=>{
+    const chip = document.createElement('div');
+    chip.className = 'matchip' + (selected[mode]===m.id ? ' active':'');
+    const swatchHtml = isPunto
+      ? `<span style="display:inline-flex;width:14px;justify-content:center;color:${m.color};font-weight:900;">${iconFor(m)}</span>`
+      : `<span class="swatch" style="background:${m.color}"></span>`;
+    chip.innerHTML = swatchHtml + m.name;
+    chip.onclick = ()=>{ selected[mode]=m.id; lineStart=null; renderMatList(); render(); updateHint(); };
+    list.appendChild(chip);
+  });
+}
+
+function baseHintForMode(){
+  if(mode==='borrar') return 'Clic sobre un símbolo o línea del plano para eliminarlo.';
+  const kind = categoryKind(mode);
+  if(kind==='punto'){
+    const mat = matById(selected[mode]);
+    if(mat && mat.centerCell) return 'Clic sobre una celda: el símbolo se centra solo en medio del cuadro (no se ajusta a las esquinas).';
+    return 'Clic sobre la cuadrícula para colocar el símbolo seleccionado.';
+  }
+  const mat = matById(selected[mode]);
+  if(mat && mat.autoConnect){
+    return `Clic entre dos postes: se coloca un(a) ${mat.name} conectando los dos postes más cercanos a tu clic (cualquier distancia y dirección, sirve para zigzag).`;
+  }
+  return '1er clic: punto de partida. 2º clic: solo indica la dirección — la longitud la fija el material.';
+}
+
+function updateHint(){
+  hintEl.classList.remove('warn');
+  hintEl.textContent = baseHintForMode();
+}
+
+function flashHint(msg){
+  if(hintTimeout) clearTimeout(hintTimeout);
+  hintEl.classList.add('warn');
+  hintEl.textContent = msg;
+  hintTimeout = setTimeout(()=>{ updateHint(); }, 2400);
+}
+
+function setMode(newMode){
+  mode = newMode;
+  lineStart = null;
+  const allBtnIds = ['btn_postes','btn_iluminacion','btn_mamparas','btn_puertas','btn_cartelas','btn_tirantas','btn_borrar'];
+  allBtnIds.forEach(id=>document.getElementById(id).classList.remove('active'));
+  document.getElementById('btn_'+newMode).classList.add('active');
+  renderMatList();
+  render();
+  updateHint();
+}
+
+const clearBtn = document.getElementById('clearBtn');
+let clearArmed = false;
+let clearArmTimeout = null;
+clearBtn.addEventListener('click', ()=>{
+  if(elements.length===0) return;
+  if(!clearArmed){
+    clearArmed = true;
+    clearBtn.textContent = '¿Seguro? Clic de nuevo';
+    clearBtn.classList.add('danger');
+    clearArmTimeout = setTimeout(()=>{
+      clearArmed = false;
+      clearBtn.textContent = 'Vaciar plano';
+      clearBtn.classList.remove('danger');
+    }, 3000);
+    return;
+  }
+  clearTimeout(clearArmTimeout);
+  clearArmed = false;
+  clearBtn.textContent = 'Vaciar plano';
+  clearBtn.classList.remove('danger');
+  snapshotUndo();
+  elements = [];
+  lineStart = null;
+  render(); renderLegend();
+});
+
+document.getElementById('undoBtn').addEventListener('click', undo);
+
+function getLogicalCoords(e){
+  const rect = svg.getBoundingClientRect();
+  const vb = svg.viewBox.baseVal;
+  return {
+    x: vb.x + (e.clientX-rect.left) * (vb.width/rect.width),
+    y: vb.y + (e.clientY-rect.top) * (vb.height/rect.height)
+  };
+}
+
+function constrainedEndpoint(start, rawX, rawY, lenMeters){
+  const lenUnits = lenMeters*UNIT;
+  const dx = rawX - start.x, dy = rawY - start.y;
+  let endX, endY;
+  if(Math.abs(dx) >= Math.abs(dy)){
+    endX = start.x + (dx>=0 ? lenUnits : -lenUnits);
+    endY = start.y;
+  } else {
+    endX = start.x;
+    endY = start.y + (dy>=0 ? lenUnits : -lenUnits);
+  }
+  endX = Math.min(COLS*UNIT, Math.max(0, endX));
+  endY = Math.min(ROWS*UNIT, Math.max(0, endY));
+  return {x:endX, y:endY};
+}
+
+// Mampara flexible: conecta los DOS postes más cercanos al punto de clic,
+// sin exigir una distancia ni dirección concreta (necesario para zigzags).
+function placeAutoConnect(mat, rawX, rawY){
+  const postes = elements.filter(e=>e.type==='punto' && matById(e.matId) && matById(e.matId).isPoste);
+  if(postes.length<2){ flashHint('Coloca al menos dos postes antes de poner una mampara.'); return; }
+
+  const withDist = postes
+    .map(p=>({p, d:Math.hypot(p.x-rawX, p.y-rawY)}))
+    .sort((a,b)=>a.d-b.d);
+
+  if(withDist[0].d > UNIT*10){ flashHint('Clica más cerca de los postes que quieres conectar.'); return; }
+
+  const anchor = withDist[0].p;
+  const target = withDist[1].p;
+
+  snapshotUndo();
+  elements.push({id:'e'+(elIdCounter++), type:'linea', matId:mat.id, x1:anchor.x, y1:anchor.y, x2:target.x, y2:target.y});
+  render(); renderLegend();
+}
+
+svg.addEventListener('mousemove', (e)=>{
+  if(categoryKind(mode)!=='linea' || !lineStart) return;
+  const mat = matById(selected[mode]);
+  if(!mat || mat.autoConnect) return;
+  const {x:rawX, y:rawY} = getLogicalCoords(e);
+  const end = constrainedEndpoint(lineStart, rawX, rawY, mat.len);
+  const preview = document.getElementById('previewLine');
+  if(preview){
+    preview.setAttribute('x1', lineStart.x);
+    preview.setAttribute('y1', lineStart.y);
+    preview.setAttribute('x2', end.x);
+    preview.setAttribute('y2', end.y);
+    preview.setAttribute('stroke', mat.color);
+    preview.setAttribute('visibility', 'visible');
+  }
+});
+
+svg.addEventListener('click', (e)=>{
+  const {x:rawX, y:rawY} = getLogicalCoords(e);
+  const kind = categoryKind(mode);
+
+  if(kind==='punto'){
+    const mat = matById(selected[mode]);
+    let x, y;
+    if(mat.centerCell){
+      x = snapCellCenter(rawX);
+      y = snapCellCenter(rawY);
+    } else {
+      x = Math.min(COLS*UNIT, Math.max(0, snap(rawX)));
+      y = Math.min(ROWS*UNIT, Math.max(0, snap(rawY)));
+    }
+    snapshotUndo();
+    elements.push({id:'e'+(elIdCounter++), type:'punto', matId:mat.id, x, y});
+    render(); renderLegend();
+  } else if(kind==='linea'){
+    const mat = matById(selected[mode]);
+    if(mat.autoConnect){
+      placeAutoConnect(mat, rawX, rawY);
+      return;
+    }
+    const x = Math.min(COLS*UNIT, Math.max(0, snap(rawX)));
+    const y = Math.min(ROWS*UNIT, Math.max(0, snap(rawY)));
+    if(!lineStart){
+      lineStart = {x,y};
+      render();
+    } else {
+      const end = constrainedEndpoint(lineStart, rawX, rawY, mat.len);
+      snapshotUndo();
+      elements.push({id:'e'+(elIdCounter++), type:'linea', matId:mat.id, x1:lineStart.x, y1:lineStart.y, x2:end.x, y2:end.y});
+      lineStart = null;
+      render(); renderLegend();
+    }
+  }
+});
+
+function rowHtml(swatchHtml, name, qtyLabel, derived){
+  const cls = derived ? ' class="derived"' : '';
+  const namePrefix = derived ? '↳ ' : '';
+  return `<tr${cls}><td>${derived?'':swatchHtml}</td><td>${namePrefix}${name}</td><td class="num">${qtyLabel}</td><td style="text-align:center"><input type="checkbox"></td></tr>`;
+}
+
+function renderLegend(){
+  const body = document.getElementById('legendBody');
+  const emptyMsg = document.getElementById('legendEmpty');
+  body.innerHTML = '';
+
+  if(elements.length===0){ emptyMsg.style.display='block'; return; }
+  emptyMsg.style.display='none';
+
+  const drawnCounts = {};
+  allMaterials.forEach(m=>{ drawnCounts[m.id] = elements.filter(e=>e.matId===m.id).length; });
+
+  const mergeIn = {}; // targetId -> total unidades fusionadas
+  const virtualBuckets = {}; // label -> {total, insertAfterId}
+
+  allMaterials.forEach(m=>{
+    if(!m.extras) return;
+    m.extras.forEach(ex=>{
+      const contributed = (drawnCounts[m.id]||0) * ex.factor;
+      if(contributed<=0) return;
+      if(ex.targetId){
+        mergeIn[ex.targetId] = (mergeIn[ex.targetId]||0) + contributed;
+      } else {
+        if(!virtualBuckets[ex.label]) virtualBuckets[ex.label] = {total:0, insertAfterId:ex.insertAfterId};
+        virtualBuckets[ex.label].total += contributed;
+      }
+    });
+  });
+
+  const renderedBuckets = new Set();
+  let html = '';
+
+  displayOrder.forEach(id=>{
+    const m = matById(id);
+    const qty = (drawnCounts[id]||0) + (mergeIn[id]||0);
+    if(qty>0){
+      let qtyLabel, swatchHtml;
+      if(pointMaterials.includes(m)){
+        qtyLabel = qty + ' ud.';
+        swatchHtml = `<span style="color:${m.color};font-weight:900;">${iconFor(m)}</span>`;
+      } else {
+        qtyLabel = qty + ' ud.';
+        swatchHtml = `<span class="swatch" style="background:${m.color}"></span>`;
+      }
+      html += rowHtml(swatchHtml, m.name, qtyLabel, false);
+    }
+    Object.keys(virtualBuckets).forEach(label=>{
+      const b = virtualBuckets[label];
+      if(b.insertAfterId===id && b.total>0 && !renderedBuckets.has(label)){
+        html += rowHtml('', label + ' (auto)', b.total + ' ud.', true);
+        renderedBuckets.add(label);
+      }
+    });
+  });
+
+  // cualquier bucket cuyo "insertAfterId" nunca llegó a mostrarse (cantidad 0)
+  Object.keys(virtualBuckets).forEach(label=>{
+    const b = virtualBuckets[label];
+    if(b.total>0 && !renderedBuckets.has(label)){
+      html += rowHtml('', label + ' (auto)', b.total + ' ud.', true);
+      renderedBuckets.add(label);
+    }
+  });
+
+  // Ganchos: por cada tiranta cuya cantidad final sea >1, suma esa cantidad al total de ganchos
+  let ganchos = 0;
+  ['l1','l2','l3'].forEach(id=>{
+    const qty = (drawnCounts[id]||0) + (mergeIn[id]||0);
+    if(qty>1) ganchos += qty;
+  });
+  if(ganchos>0){
+    html += rowHtml('', 'Ganchos', ganchos + ' ud.', true);
+  }
+
+  body.innerHTML = html;
+}
+
+function getDrawingBounds(){
+  if(elements.length===0) return {minX:0, minY:0, maxX:COLS*UNIT, maxY:ROWS*UNIT};
+  let minX=Infinity, minY=Infinity, maxX=-Infinity, maxY=-Infinity;
+  elements.forEach(el=>{
+    if(el.type==='punto'){
+      minX=Math.min(minX, el.x); maxX=Math.max(maxX, el.x);
+      minY=Math.min(minY, el.y); maxY=Math.max(maxY, el.y);
+    } else {
+      minX=Math.min(minX, el.x1, el.x2); maxX=Math.max(maxX, el.x1, el.x2);
+      minY=Math.min(minY, el.y1, el.y2); maxY=Math.max(maxY, el.y1, el.y2);
+    }
+  });
+  const pad = UNIT*2;
+  minX = Math.max(0, minX-pad);
+  minY = Math.max(0, minY-pad);
+  maxX = Math.min(COLS*UNIT, maxX+pad);
+  maxY = Math.min(ROWS*UNIT, maxY+pad);
+  return {minX, minY, maxX, maxY};
+}
+
+function preparePrintSvg(){
+  const printArea = document.getElementById('printArea');
+  const b = getDrawingBounds();
+  const bw = b.maxX-b.minX, bh = b.maxY-b.minY;
+  const aspect = bw/bh;
+  const maxWmm = 190, maxHmm = 145;
+  let wMm, hMm;
+  if(aspect >= maxWmm/maxHmm){ wMm = maxWmm; hMm = maxWmm/aspect; }
+  else { hMm = maxHmm; wMm = maxHmm*aspect; }
+  const inner = buildElementsSvgContent(true);
+  printArea.innerHTML = `<svg viewBox="${b.minX} ${b.minY} ${bw} ${bh}" width="${wMm.toFixed(1)}mm" height="${hMm.toFixed(1)}mm" xmlns="http://www.w3.org/2000/svg">${inner}</svg>`;
+}
+window.addEventListener('beforeprint', preparePrintSvg);
+document.getElementById('printBtn').addEventListener('click', function(){
+  preparePrintSvg();
+  window.print();
+});
+
+applyZoomStyle();
+renderMatList();
+render();
+renderLegend();
+updateHint();
+openProjectPicker();
+</script>
+</body>
+</html>
