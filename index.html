@@ -293,7 +293,7 @@ function withTimeout(promise, ms){
 function serializeState(){
   return JSON.stringify({
     planName: document.getElementById('planName').value,
-    COLS, ROWS, elements
+    COLS, ROWS, elements, areaMaterials
   });
 }
 
@@ -306,6 +306,19 @@ function applyState(stateStr){
   elements = state.elements || [];
   document.getElementById('gridW').value = COLS;
   document.getElementById('gridH').value = ROWS;
+
+  areaMaterials = (state.areaMaterials && state.areaMaterials.length)
+    ? state.areaMaterials
+    : [{id:'a1', name:'Moqueta', color:'#ff2d2d', category:'moqueta', measureArea:true}];
+  rebuildAllMaterials();
+  let maxA = 1;
+  areaMaterials.forEach(m=>{
+    const n = parseInt((m.id||'').replace('a',''),10);
+    if(!isNaN(n) && n>maxA) maxA = n;
+  });
+  areaColorCounter = maxA + 1;
+  selected.moqueta = areaMaterials[0].id;
+
   let maxId = 0;
   elements.forEach(el=>{
     const n = parseInt((el.id||'').replace('e',''),10);
@@ -315,7 +328,7 @@ function applyState(stateStr){
   undoStack = [];
   lineStart = null;
   applyZoomStyle();
-  render(); renderLegend(); updateHint();
+  renderMatList(); render(); renderLegend(); updateHint();
 }
 
 function openProjectPicker(){
@@ -464,6 +477,73 @@ document.addEventListener('keydown', (e)=>{
 });
 // ---------- fin bloque Supabase ----------
 
+// ---------- Colores de moqueta a partir de un nombre escrito ----------
+const spanishColorDict = {
+  'negro':'#1a1a1a', 'blanco':'#f5f5f5', 'gris':'#888888', 'gris claro':'#cccccc', 'gris oscuro':'#444444',
+  'grafito':'#3c3c3c', 'antracita':'#2f2f2f', 'plateado':'#c0c0c0', 'plata':'#c0c0c0',
+  'rojo':'#e53935', 'rojo oscuro':'#8b0000', 'granate':'#7b1113', 'burdeos':'#6d071a', 'vino':'#722f37',
+  'azul':'#1e5fb4', 'azul marino':'#1a2b4c', 'azul claro':'#7ec8e3', 'azul cielo':'#87ceeb', 'celeste':'#87ceeb',
+  'azul petroleo':'#014d4e', 'petroleo':'#014d4e', 'turquesa':'#1abc9c', 'cian':'#00bcd4',
+  'verde':'#2e8b57', 'verde oscuro':'#1b4d3e', 'verde claro':'#90ee90', 'verde oliva':'#6b8e23',
+  'verde botella':'#0b3d2e', 'lima':'#a4c639', 'menta':'#98ff98',
+  'amarillo':'#f5c518', 'mostaza':'#c9a227', 'dorado':'#d4af37', 'oro':'#d4af37',
+  'naranja':'#e67e22', 'naranja oscuro':'#a0522d', 'coral':'#ff7f50',
+  'morado':'#6a0dad', 'violeta':'#8a2be2', 'lila':'#c8a2c8', 'purpura':'#800080', 'malva':'#b784a7',
+  'rosa':'#e75480', 'fucsia':'#ff00ff', 'magenta':'#ff00ff', 'salmon':'#fa8072',
+  'marron':'#6b4423', 'marron oscuro':'#4b2e1e', 'chocolate':'#7b3f00', 'cafe':'#4b3621',
+  'beige':'#d8c3a5', 'beige oscuro':'#a68a64', 'arena':'#c2b280', 'crema':'#fffdd0', 'camel':'#c19a6b',
+  'bronce':'#cd7f32', 'cobre':'#b87333', 'caqui':'#78866b'
+};
+function normalizeColorKey(s){
+  return s.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim().replace(/\s+/g,' ');
+}
+function rgbStringToHex(rgb){
+  const m = rgb.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+  if(!m) return null;
+  const toHex = n => (+n).toString(16).padStart(2,'0');
+  return '#' + toHex(m[1]) + toHex(m[2]) + toHex(m[3]);
+}
+function resolveColorInput(raw){
+  const key = normalizeColorKey(raw);
+  if(spanishColorDict[key]) return spanishColorDict[key];
+  // por si escriben el nombre en inglés, un hex, o un rgb(...) directamente
+  const probe = document.createElement('span');
+  probe.style.color = '';
+  probe.style.color = raw;
+  if(!probe.style.color) return null;
+  document.body.appendChild(probe);
+  const rgb = getComputedStyle(probe).color;
+  document.body.removeChild(probe);
+  return rgbStringToHex(rgb);
+}
+
+function createMoquetaColor(){
+  const input = document.getElementById('moquetaColorInput');
+  const raw = input.value.trim();
+  if(!raw){ flashHint('Escribe el nombre de un color (ej. azul marino).'); return; }
+  const key = normalizeColorKey(raw);
+
+  // si ya existe un color con ese nombre en este proyecto, lo reutilizamos
+  const existing = areaMaterials.find(m => normalizeColorKey(m.name) === ('moqueta ' + key) || normalizeColorKey(m.name) === key);
+  if(existing){
+    selected.moqueta = existing.id;
+    input.value = '';
+    renderMatList(); render(); updateHint();
+    return;
+  }
+
+  const hex = resolveColorInput(raw);
+  if(!hex){
+    flashHint('No reconozco ese color. Prueba con otro nombre (ej. negro, azul marino, verde oliva).');
+    return;
+  }
+  const id = 'a' + (areaColorCounter++);
+  areaMaterials.push({ id, name: 'Moqueta ' + raw.trim(), color: hex, category:'moqueta', measureArea:true });
+  rebuildAllMaterials();
+  selected.moqueta = id;
+  input.value = '';
+  renderMatList(); render(); updateHint();
+}
 const categories = [
   {id:'postes', kind:'punto'},
   {id:'iluminacion', kind:'punto'},
@@ -506,11 +586,13 @@ const lineMaterials = [
   {id:'d2', name:'Puerta izquierda', color:'#f43f5e', autoConnect:true, unitsOnly:true, category:'puertas',
     renderAs:'door', side:'izquierda', extras:[{label:'Mainel 1m', factor:2, insertAfterId:'l4b'}]},
 ];
-const areaMaterials = [
+let areaMaterials = [
   {id:'a1', name:'Moqueta', color:'#ff2d2d', category:'moqueta', measureArea:true},
 ];
-const allMaterials = [...pointMaterials, ...lineMaterials, ...areaMaterials];
-const displayOrder = ['p1','p2','p3','p4','l1','l2','l3','l4a','l4b','d1','d2','l5s','l5','l6','l7','l8','a1'];
+let areaColorCounter = 2;
+let allMaterials = [...pointMaterials, ...lineMaterials, ...areaMaterials];
+function rebuildAllMaterials(){ allMaterials = [...pointMaterials, ...lineMaterials, ...areaMaterials]; }
+const displayOrder = ['p1','p2','p3','p4','l1','l2','l3','l4a','l4b','d1','d2','l5s','l5','l6','l7','l8'];
 function matById(id){ return allMaterials.find(m=>m.id===id); }
 
 let selected = { postes:'p1', iluminacion:'p3', mamparas:'l4a', puertas:'d1', cartelas:'l5', tirantas:'l1', moqueta:'a1' };
@@ -703,6 +785,24 @@ function renderMatList(){
     chip.onclick = ()=>{ selected[mode]=m.id; lineStart=null; renderMatList(); render(); updateHint(); };
     list.appendChild(chip);
   });
+
+  if(mode==='moqueta'){
+    const formWrap = document.createElement('div');
+    formWrap.style.cssText = 'display:flex;gap:6px;align-items:center;';
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.id = 'moquetaColorInput';
+    input.placeholder = 'nombre del color (ej. azul marino)';
+    input.style.width = '210px';
+    input.addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); createMoquetaColor(); } });
+    const btn = document.createElement('button');
+    btn.className = 'smallbtn';
+    btn.textContent = '+ Crear color';
+    btn.onclick = createMoquetaColor;
+    formWrap.appendChild(input);
+    formWrap.appendChild(btn);
+    list.appendChild(formWrap);
+  }
 }
 
 function baseHintForMode(){
@@ -956,14 +1056,6 @@ function renderLegend(){
 
   displayOrder.forEach(id=>{
     const m = matById(id);
-    if(m.measureArea){
-      const totalArea = areaTotals[id] || 0;
-      if(totalArea>0){
-        const swatchHtml = `<span class="swatch" style="background:${m.color}"></span>`;
-        html += rowHtml(swatchHtml, m.name, totalArea.toFixed(1) + ' m²', false);
-      }
-      return;
-    }
     const qty = (drawnCounts[id]||0) + (mergeIn[id]||0);
     if(qty>0){
       let qtyLabel, swatchHtml;
@@ -983,6 +1075,15 @@ function renderLegend(){
         renderedBuckets.add(label);
       }
     });
+  });
+
+  // Filas de moqueta: una por cada color creado que se haya usado en el plano
+  areaMaterials.forEach(m=>{
+    const totalArea = areaTotals[m.id] || 0;
+    if(totalArea>0){
+      const swatchHtml = `<span class="swatch" style="background:${m.color}"></span>`;
+      html += rowHtml(swatchHtml, m.name, totalArea.toFixed(1) + ' m²', false);
+    }
   });
 
   // cualquier bucket cuyo "insertAfterId" nunca llegó a mostrarse (cantidad 0)
