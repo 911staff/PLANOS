@@ -42,6 +42,16 @@
   .loadingmsg{color:var(--muted);font-size:12px;padding:10px 0;}
   .overlay-footer{margin-top:14px;text-align:right;}
 
+  .toast{
+    position:fixed;top:20px;left:50%;transform:translateX(-50%) translateY(-20px);
+    background:#1b8f4f;color:#fff;padding:14px 22px;border-radius:8px;
+    font-family:var(--mono);font-size:14px;font-weight:600;
+    box-shadow:0 6px 20px rgba(0,0,0,0.4);z-index:2000;
+    opacity:0;pointer-events:none;transition:opacity .25s ease, transform .25s ease;
+  }
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+  .toast.error{background:#c0392b;}
+
   .toolbar{
     display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;
     background:var(--panel);border:1px solid var(--line);border-radius:10px;
@@ -109,6 +119,8 @@
 </style>
 </head>
 <body>
+
+<div class="toast" id="toast"></div>
 
 <div class="overlay" id="projectOverlay">
   <div class="overlay-box">
@@ -236,6 +248,16 @@ function setSaveStatus(msg){
   if(el) el.textContent = msg;
 }
 
+function showToast(msg, isError){
+  const t = document.getElementById('toast');
+  if(!t) return;
+  t.textContent = msg;
+  t.classList.toggle('error', !!isError);
+  t.classList.add('show');
+  clearTimeout(showToast._timer);
+  showToast._timer = setTimeout(()=>{ t.classList.remove('show'); }, 2200);
+}
+
 function serializeState(){
   return JSON.stringify({
     planName: document.getElementById('planName').value,
@@ -297,7 +319,7 @@ function refreshProjectList(){
       openBtn.onclick = ()=>openProject(doc.id, d);
       const delBtn = document.createElement('button');
       delBtn.className='smallbtn danger'; delBtn.textContent='Eliminar';
-      delBtn.onclick = ()=>deleteProject(doc.id);
+      delBtn.onclick = ()=>deleteProject(doc.id, item);
       item.appendChild(nameSpan);
       item.appendChild(dateSpan);
       item.appendChild(openBtn);
@@ -335,7 +357,8 @@ function createNewProject(){
     nameInput.value = '';
     document.getElementById('projectOverlay').classList.add('hidden');
     setSaveStatus('Proyecto: '+name+' — creado ahora mismo.');
-  }).catch(err=>alert('No se pudo crear el proyecto: '+err.message));
+    showToast('✓ Proyecto creado');
+  }).catch(err=>{ showToast('Error al crear: '+err.message, true); });
 }
 
 function saveCurrentProject(){
@@ -351,7 +374,8 @@ function saveCurrentProject(){
       currentProjectId = docRef.id;
       currentProjectName = name;
       setSaveStatus('Guardado como "'+name+'" — '+new Date().toLocaleString());
-    }).catch(err=>alert('Error al guardar: '+err.message));
+      showToast('✓ Guardado');
+    }).catch(err=>{ showToast('Error al guardar: '+err.message, true); });
     return;
   }
   const name = document.getElementById('planName').value.trim() || currentProjectName || 'Proyecto sin nombre';
@@ -362,7 +386,8 @@ function saveCurrentProject(){
     updatedAt: firebase.firestore.FieldValue.serverTimestamp()
   }).then(()=>{
     setSaveStatus('Guardado — '+new Date().toLocaleString());
-  }).catch(err=>alert('Error al guardar: '+err.message));
+    showToast('✓ Guardado');
+  }).catch(err=>{ showToast('Error al guardar: '+err.message, true); });
 }
 
 function renameCurrentProject(){
@@ -372,16 +397,30 @@ function renameCurrentProject(){
   currentProjectName = nuevo.trim();
   document.getElementById('planName').value = currentProjectName;
   db.collection('planos').doc(currentProjectId).update({ name: currentProjectName })
-    .then(()=>setSaveStatus('Renombrado a "'+currentProjectName+'"'))
-    .catch(err=>alert('Error al renombrar: '+err.message));
+    .then(()=>{
+      setSaveStatus('Renombrado a "'+currentProjectName+'"');
+      showToast('✓ Renombrado');
+    })
+    .catch(err=>{ showToast('Error al renombrar: '+err.message, true); });
 }
 
-function deleteProject(id){
+function deleteProject(id, itemEl){
   if(!confirm('¿Eliminar este proyecto permanentemente? No se puede deshacer.')) return;
+
+  // Lo quitamos de la pantalla al instante, para que se note el efecto sin esperar al servidor.
+  if(itemEl && itemEl.parentNode) itemEl.parentNode.removeChild(itemEl);
+  const wrap = document.getElementById('projList');
+  if(wrap && !wrap.querySelector('.projitem')){
+    wrap.innerHTML = '<div class="loadingmsg">Aún no tienes proyectos guardados.</div>';
+  }
+
   db.collection('planos').doc(id).delete().then(()=>{
     if(id===currentProjectId){ currentProjectId=null; currentProjectName=''; setSaveStatus('Trabajando sin guardar en la nube.'); }
-    refreshProjectList();
-  }).catch(err=>alert('Error al eliminar: '+err.message));
+    showToast('✓ Proyecto eliminado');
+  }).catch(err=>{
+    showToast('Error al eliminar: '+err.message, true);
+    refreshProjectList(); // si ha fallado de verdad, lo volvemos a mostrar
+  });
 }
 
 document.addEventListener('keydown', (e)=>{
