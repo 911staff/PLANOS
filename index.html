@@ -239,6 +239,7 @@ const firebaseConfig = {
 };
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
+db.settings({ experimentalAutoDetectLongPolling: true, merge: true });
 
 let currentProjectId = null;
 let currentProjectName = '';
@@ -255,7 +256,18 @@ function showToast(msg, isError){
   t.classList.toggle('error', !!isError);
   t.classList.add('show');
   clearTimeout(showToast._timer);
-  showToast._timer = setTimeout(()=>{ t.classList.remove('show'); }, 2200);
+  showToast._timer = setTimeout(()=>{ t.classList.remove('show'); }, isError ? 6000 : 2200);
+}
+
+// Si una operación con Firebase tarda demasiado (por ejemplo, porque la red bloquea
+// la conexión), esto evita que la web se quede "pensando" en silencio para siempre.
+function withTimeout(promise, ms){
+  return Promise.race([
+    promise,
+    new Promise((_, reject)=>{
+      setTimeout(()=>reject(new Error('La conexión con la nube está tardando demasiado. Puede que tu red o wifi esté bloqueando Firebase.')), ms);
+    })
+  ]);
 }
 
 function serializeState(){
@@ -297,7 +309,7 @@ function closeOverlaySkip(){
 function refreshProjectList(){
   const wrap = document.getElementById('projList');
   wrap.innerHTML = '<div class="loadingmsg">Cargando...</div>';
-  db.collection('planos').orderBy('updatedAt','desc').get().then(snap=>{
+  withTimeout(db.collection('planos').orderBy('updatedAt','desc').get(), 12000).then(snap=>{
     if(snap.empty){
       wrap.innerHTML = '<div class="loadingmsg">Aún no tienes proyectos guardados.</div>';
       return;
@@ -345,12 +357,12 @@ function createNewProject(){
   const name = nameInput.value.trim();
   if(!name){ alert('Ponle un nombre al proyecto.'); return; }
   const blankState = JSON.stringify({planName:name, COLS:50, ROWS:60, elements:[]});
-  db.collection('planos').add({
+  withTimeout(db.collection('planos').add({
     name,
     state: blankState,
     createdAt: firebase.firestore.FieldValue.serverTimestamp(),
     updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-  }).then(docRef=>{
+  }), 12000).then(docRef=>{
     currentProjectId = docRef.id;
     currentProjectName = name;
     applyState(blankState);
@@ -365,12 +377,12 @@ function saveCurrentProject(){
   if(!currentProjectId){
     const name = document.getElementById('planName').value.trim() || 'Proyecto sin nombre';
     if(!confirm('Este plano aún no está guardado en la nube. ¿Crear un nuevo proyecto llamado "'+name+'"?')) return;
-    db.collection('planos').add({
+    withTimeout(db.collection('planos').add({
       name,
       state: serializeState(),
       createdAt: firebase.firestore.FieldValue.serverTimestamp(),
       updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-    }).then(docRef=>{
+    }), 12000).then(docRef=>{
       currentProjectId = docRef.id;
       currentProjectName = name;
       setSaveStatus('Guardado como "'+name+'" — '+new Date().toLocaleString());
@@ -380,11 +392,11 @@ function saveCurrentProject(){
   }
   const name = document.getElementById('planName').value.trim() || currentProjectName || 'Proyecto sin nombre';
   currentProjectName = name;
-  db.collection('planos').doc(currentProjectId).update({
+  withTimeout(db.collection('planos').doc(currentProjectId).update({
     name,
     state: serializeState(),
     updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-  }).then(()=>{
+  }), 12000).then(()=>{
     setSaveStatus('Guardado — '+new Date().toLocaleString());
     showToast('✓ Guardado');
   }).catch(err=>{ showToast('Error al guardar: '+err.message, true); });
@@ -396,7 +408,7 @@ function renameCurrentProject(){
   if(!nuevo || !nuevo.trim()) return;
   currentProjectName = nuevo.trim();
   document.getElementById('planName').value = currentProjectName;
-  db.collection('planos').doc(currentProjectId).update({ name: currentProjectName })
+  withTimeout(db.collection('planos').doc(currentProjectId).update({ name: currentProjectName }), 12000)
     .then(()=>{
       setSaveStatus('Renombrado a "'+currentProjectName+'"');
       showToast('✓ Renombrado');
@@ -414,7 +426,7 @@ function deleteProject(id, itemEl){
     wrap.innerHTML = '<div class="loadingmsg">Aún no tienes proyectos guardados.</div>';
   }
 
-  db.collection('planos').doc(id).delete().then(()=>{
+  withTimeout(db.collection('planos').doc(id).delete(), 12000).then(()=>{
     if(id===currentProjectId){ currentProjectId=null; currentProjectName=''; setSaveStatus('Trabajando sin guardar en la nube.'); }
     showToast('✓ Proyecto eliminado');
   }).catch(err=>{
