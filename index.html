@@ -3,8 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <title>Plano de Materiales</title>
-<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <style>
   :root{
     --bg:#0a1420; --panel:#0f1c2b; --line:#1c3040;
@@ -125,7 +124,7 @@
 <div class="overlay" id="projectOverlay">
   <div class="overlay-box">
     <h2>Mis proyectos</h2>
-    <div class="sub2">Se guardan en la nube (Firebase), ligados a este generador. Puedes abrirlos desde cualquier navegador usando esta misma URL.</div>
+    <div class="sub2">Se guardan en la nube (Supabase), ligados a este generador. Puedes abrirlos desde cualquier navegador usando esta misma URL.</div>
     <div class="projlist" id="projList"><div class="loadingmsg">Cargando...</div></div>
     <div class="newProjectRow">
       <input type="text" id="newProjectNameInput" placeholder="Nombre del nuevo proyecto">
@@ -228,18 +227,10 @@ const UNIT = 20;
 let COLS = 50, ROWS = 60;
 let zoom = 0.9;
 
-// ---------- Firebase: guardado / carga de proyectos ----------
-const firebaseConfig = {
-  apiKey: "AIzaSyAZy204tvdIZujFow2eyHyj4ig8XnO4T5M",
-  authDomain: "generador-de-planos.firebaseapp.com",
-  projectId: "generador-de-planos",
-  storageBucket: "generador-de-planos.firebasestorage.app",
-  messagingSenderId: "173869278740",
-  appId: "1:173869278740:web:1b1cfc0fa9fa55fd69e901"
-};
-firebase.initializeApp(firebaseConfig);
-const db = firebase.firestore();
-db.settings({ experimentalAutoDetectLongPolling: true, merge: true });
+// ---------- Supabase: guardado / carga de proyectos ----------
+const SUPABASE_URL = "https://dtdcetyultwhjtwtzzcq.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR0ZGNldHl1bHR3aGp0d3R6emNxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI5ODc0MTYsImV4cCI6MjA5ODU2MzQxNn0.zM72myVq6bJFIjVyL7Pv3E73yCZn0pACmkHA7v1AKOA";
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 let currentProjectId = null;
 let currentProjectName = '';
@@ -259,13 +250,13 @@ function showToast(msg, isError){
   showToast._timer = setTimeout(()=>{ t.classList.remove('show'); }, isError ? 6000 : 2200);
 }
 
-// Si una operación con Firebase tarda demasiado (por ejemplo, porque la red bloquea
-// la conexión), esto evita que la web se quede "pensando" en silencio para siempre.
+// Si una operación con la nube tarda demasiado (por ejemplo, porque la red bloquea
+// las peticiones), esto evita que la web se quede "pensando" en silencio para siempre.
 function withTimeout(promise, ms){
   return Promise.race([
     promise,
     new Promise((_, reject)=>{
-      setTimeout(()=>reject(new Error('La conexión con la nube está tardando demasiado. Puede que tu red o wifi esté bloqueando Firebase.')), ms);
+      setTimeout(()=>reject(new Error('La conexión con la nube está tardando demasiado. Puede que tu red o wifi esté bloqueando el acceso.')), ms);
     })
   ]);
 }
@@ -309,38 +300,39 @@ function closeOverlaySkip(){
 function refreshProjectList(){
   const wrap = document.getElementById('projList');
   wrap.innerHTML = '<div class="loadingmsg">Cargando...</div>';
-  withTimeout(db.collection('planos').orderBy('updatedAt','desc').get(), 12000).then(snap=>{
-    if(snap.empty){
-      wrap.innerHTML = '<div class="loadingmsg">Aún no tienes proyectos guardados.</div>';
-      return;
-    }
-    wrap.innerHTML = '';
-    snap.forEach(doc=>{
-      const d = doc.data();
-      const item = document.createElement('div');
-      item.className = 'projitem';
-      const fecha = (d.updatedAt && d.updatedAt.toDate) ? d.updatedAt.toDate().toLocaleString() : '';
-      const nameSpan = document.createElement('span');
-      nameSpan.className = 'pname';
-      nameSpan.textContent = d.name || '(sin nombre)';
-      const dateSpan = document.createElement('span');
-      dateSpan.className = 'pdate';
-      dateSpan.textContent = fecha;
-      const openBtn = document.createElement('button');
-      openBtn.className='smallbtn'; openBtn.textContent='Abrir';
-      openBtn.onclick = ()=>openProject(doc.id, d);
-      const delBtn = document.createElement('button');
-      delBtn.className='smallbtn danger'; delBtn.textContent='Eliminar';
-      delBtn.onclick = ()=>deleteProject(doc.id, item);
-      item.appendChild(nameSpan);
-      item.appendChild(dateSpan);
-      item.appendChild(openBtn);
-      item.appendChild(delBtn);
-      wrap.appendChild(item);
+  withTimeout(sb.from('planos').select('*').order('updated_at', {ascending:false}), 12000)
+    .then(({data, error})=>{
+      if(error) throw error;
+      if(!data || data.length===0){
+        wrap.innerHTML = '<div class="loadingmsg">Aún no tienes proyectos guardados.</div>';
+        return;
+      }
+      wrap.innerHTML = '';
+      data.forEach(row=>{
+        const item = document.createElement('div');
+        item.className = 'projitem';
+        const fecha = row.updated_at ? new Date(row.updated_at).toLocaleString() : '';
+        const nameSpan = document.createElement('span');
+        nameSpan.className = 'pname';
+        nameSpan.textContent = row.name || '(sin nombre)';
+        const dateSpan = document.createElement('span');
+        dateSpan.className = 'pdate';
+        dateSpan.textContent = fecha;
+        const openBtn = document.createElement('button');
+        openBtn.className='smallbtn'; openBtn.textContent='Abrir';
+        openBtn.onclick = ()=>openProject(row.id, row);
+        const delBtn = document.createElement('button');
+        delBtn.className='smallbtn danger'; delBtn.textContent='Eliminar';
+        delBtn.onclick = ()=>deleteProject(row.id, item);
+        item.appendChild(nameSpan);
+        item.appendChild(dateSpan);
+        item.appendChild(openBtn);
+        item.appendChild(delBtn);
+        wrap.appendChild(item);
+      });
+    }).catch(err=>{
+      wrap.innerHTML = '<div class="loadingmsg">Error al cargar: '+(err.message||err)+'</div>';
     });
-  }).catch(err=>{
-    wrap.innerHTML = '<div class="loadingmsg">Error al cargar: '+err.message+'</div>';
-  });
 }
 
 function openProject(id, data){
@@ -348,7 +340,7 @@ function openProject(id, data){
   currentProjectName = data.name || '';
   applyState(data.state || '{}');
   document.getElementById('projectOverlay').classList.add('hidden');
-  const fecha = (data.updatedAt && data.updatedAt.toDate) ? data.updatedAt.toDate().toLocaleString() : '';
+  const fecha = data.updated_at ? new Date(data.updated_at).toLocaleString() : '';
   setSaveStatus('Proyecto: '+currentProjectName+(fecha?(' — último guardado '+fecha):''));
 }
 
@@ -357,49 +349,47 @@ function createNewProject(){
   const name = nameInput.value.trim();
   if(!name){ alert('Ponle un nombre al proyecto.'); return; }
   const blankState = JSON.stringify({planName:name, COLS:50, ROWS:60, elements:[]});
-  withTimeout(db.collection('planos').add({
-    name,
-    state: blankState,
-    createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-  }), 12000).then(docRef=>{
-    currentProjectId = docRef.id;
+  withTimeout(
+    sb.from('planos').insert({ name, state: blankState }).select().single(),
+    12000
+  ).then(({data, error})=>{
+    if(error) throw error;
+    currentProjectId = data.id;
     currentProjectName = name;
     applyState(blankState);
     nameInput.value = '';
     document.getElementById('projectOverlay').classList.add('hidden');
     setSaveStatus('Proyecto: '+name+' — creado ahora mismo.');
     showToast('✓ Proyecto creado');
-  }).catch(err=>{ showToast('Error al crear: '+err.message, true); });
+  }).catch(err=>{ showToast('Error al crear: '+(err.message||err), true); });
 }
 
 function saveCurrentProject(){
   if(!currentProjectId){
     const name = document.getElementById('planName').value.trim() || 'Proyecto sin nombre';
     if(!confirm('Este plano aún no está guardado en la nube. ¿Crear un nuevo proyecto llamado "'+name+'"?')) return;
-    withTimeout(db.collection('planos').add({
-      name,
-      state: serializeState(),
-      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-    }), 12000).then(docRef=>{
-      currentProjectId = docRef.id;
+    withTimeout(
+      sb.from('planos').insert({ name, state: serializeState() }).select().single(),
+      12000
+    ).then(({data, error})=>{
+      if(error) throw error;
+      currentProjectId = data.id;
       currentProjectName = name;
       setSaveStatus('Guardado como "'+name+'" — '+new Date().toLocaleString());
       showToast('✓ Guardado');
-    }).catch(err=>{ showToast('Error al guardar: '+err.message, true); });
+    }).catch(err=>{ showToast('Error al guardar: '+(err.message||err), true); });
     return;
   }
   const name = document.getElementById('planName').value.trim() || currentProjectName || 'Proyecto sin nombre';
   currentProjectName = name;
-  withTimeout(db.collection('planos').doc(currentProjectId).update({
-    name,
-    state: serializeState(),
-    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-  }), 12000).then(()=>{
+  withTimeout(
+    sb.from('planos').update({ name, state: serializeState(), updated_at: new Date().toISOString() }).eq('id', currentProjectId),
+    12000
+  ).then(({error})=>{
+    if(error) throw error;
     setSaveStatus('Guardado — '+new Date().toLocaleString());
     showToast('✓ Guardado');
-  }).catch(err=>{ showToast('Error al guardar: '+err.message, true); });
+  }).catch(err=>{ showToast('Error al guardar: '+(err.message||err), true); });
 }
 
 function renameCurrentProject(){
@@ -408,12 +398,13 @@ function renameCurrentProject(){
   if(!nuevo || !nuevo.trim()) return;
   currentProjectName = nuevo.trim();
   document.getElementById('planName').value = currentProjectName;
-  withTimeout(db.collection('planos').doc(currentProjectId).update({ name: currentProjectName }), 12000)
-    .then(()=>{
+  withTimeout(sb.from('planos').update({ name: currentProjectName }).eq('id', currentProjectId), 12000)
+    .then(({error})=>{
+      if(error) throw error;
       setSaveStatus('Renombrado a "'+currentProjectName+'"');
       showToast('✓ Renombrado');
     })
-    .catch(err=>{ showToast('Error al renombrar: '+err.message, true); });
+    .catch(err=>{ showToast('Error al renombrar: '+(err.message||err), true); });
 }
 
 function deleteProject(id, itemEl){
@@ -426,11 +417,12 @@ function deleteProject(id, itemEl){
     wrap.innerHTML = '<div class="loadingmsg">Aún no tienes proyectos guardados.</div>';
   }
 
-  withTimeout(db.collection('planos').doc(id).delete(), 12000).then(()=>{
+  withTimeout(sb.from('planos').delete().eq('id', id), 12000).then(({error})=>{
+    if(error) throw error;
     if(id===currentProjectId){ currentProjectId=null; currentProjectName=''; setSaveStatus('Trabajando sin guardar en la nube.'); }
     showToast('✓ Proyecto eliminado');
   }).catch(err=>{
-    showToast('Error al eliminar: '+err.message, true);
+    showToast('Error al eliminar: '+(err.message||err), true);
     refreshProjectList(); // si ha fallado de verdad, lo volvemos a mostrar
   });
 }
@@ -441,7 +433,7 @@ document.addEventListener('keydown', (e)=>{
     saveCurrentProject();
   }
 });
-// ---------- fin bloque Firebase ----------
+// ---------- fin bloque Supabase ----------
 
 const categories = [
   {id:'postes', kind:'punto'},
