@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <title>Plano de Materiales</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <style>
   :root{
     --bg:#0a1420; --panel:#0f1c2b; --line:#1c3040;
@@ -50,6 +52,18 @@
   }
   .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
   .toast.error{background:#c0392b;}
+
+  #pdfExportArea{position:fixed;left:-9999px;top:0;}
+  .pdfExport{background:#fff;padding:16px;width:780px;font-family:var(--mono);}
+  .pdfExport h2{color:#000;font-family:var(--serif);font-weight:400;margin:0 0 10px;font-size:18px;}
+  .pdfExport svg{background:#fff;display:block;margin-bottom:14px;}
+  .pdfExport .legend{background:#fff;border:1px solid #ccc;padding:12px 14px;flex:none;width:100%;}
+  .pdfExport .legend h2{font-size:12px;text-transform:uppercase;color:#555;margin:0 0 8px;}
+  .pdfExport .legend th{color:#555;border-bottom:1px solid #ccc;}
+  .pdfExport .legend td{border-bottom:1px solid #eee;color:#000;}
+  .pdfExport .legend .num{color:#000;}
+  .pdfExport .legend tr.derived td{color:#666;font-style:italic;}
+  .pdfExport .legend .empty{display:none;}
 
   .toolbar{
     display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;
@@ -191,6 +205,7 @@
       <div style="display:flex;gap:6px;">
         <button class="smallbtn" id="undoBtn">↶ Deshacer</button>
         <button class="smallbtn" id="printBtn">Imprimir / PDF (A4)</button>
+        <button class="smallbtn" id="pdfBtn">📄 Descargar PDF</button>
         <button class="smallbtn" id="clearBtn">Vaciar plano</button>
       </div>
     </div>
@@ -954,6 +969,72 @@ document.getElementById('printBtn').addEventListener('click', function(){
   preparePrintSvg();
   window.print();
 });
+
+// Genera un PDF descargable directamente (sirve también en móviles, donde
+// el diálogo de impresión del navegador no siempre funciona).
+function buildPdfExportArea(){
+  const old = document.getElementById('pdfExportArea');
+  if(old) old.remove();
+
+  const el = document.createElement('div');
+  el.id = 'pdfExportArea';
+  el.className = 'pdfExport';
+
+  const title = document.createElement('h2');
+  title.textContent = document.getElementById('planName').value.trim() || 'Plano de Materiales';
+  el.appendChild(title);
+
+  const b = getDrawingBounds();
+  const bw = b.maxX - b.minX, bh = b.maxY - b.minY;
+  const svgWidthPx = 740;
+  const svgHeightPx = Math.max(1, Math.round(svgWidthPx * (bh / bw)));
+  const inner = buildElementsSvgContent(true);
+  const svgWrap = document.createElement('div');
+  svgWrap.innerHTML = `<svg viewBox="${b.minX} ${b.minY} ${bw} ${bh}" width="${svgWidthPx}" height="${svgHeightPx}" xmlns="http://www.w3.org/2000/svg">${inner}</svg>`;
+  el.appendChild(svgWrap);
+
+  const legendClone = document.querySelector('.legend').cloneNode(true);
+  el.appendChild(legendClone);
+
+  document.body.appendChild(el);
+  return el;
+}
+
+function generatePdf(){
+  if(elements.length===0){ flashHint('Dibuja algo antes de generar el PDF.'); return; }
+  const btn = document.getElementById('pdfBtn');
+  btn.disabled = true;
+  const originalLabel = btn.textContent;
+  btn.textContent = 'Generando...';
+
+  const el = buildPdfExportArea();
+  html2canvas(el, { backgroundColor:'#ffffff', scale:2 }).then(canvas=>{
+    const imgData = canvas.toDataURL('image/png');
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({ orientation:'portrait', unit:'mm', format:'a4' });
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    const ratio = canvas.height / canvas.width;
+    let imgW = pageWidth - 16;
+    let imgH = imgW * ratio;
+    if(imgH > pageHeight - 16){
+      imgH = pageHeight - 16;
+      imgW = imgH / ratio;
+    }
+    pdf.addImage(imgData, 'PNG', 8, 8, imgW, imgH);
+    const safeName = (document.getElementById('planName').value.trim() || 'plano').replace(/[^a-z0-9_\-]+/gi, '_');
+    pdf.save(safeName + '.pdf');
+    el.remove();
+    showToast('✓ PDF generado');
+  }).catch(err=>{
+    el.remove();
+    showToast('Error al generar el PDF: '+(err.message||err), true);
+  }).finally(()=>{
+    btn.disabled = false;
+    btn.textContent = originalLabel;
+  });
+}
+document.getElementById('pdfBtn').addEventListener('click', generatePdf);
 
 applyZoomStyle();
 renderMatList();
