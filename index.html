@@ -92,7 +92,7 @@
   .smallbtn:hover{color:var(--ink);border-color:#57575a;}
   .smallbtn.danger{border-color:#ff6a4d;color:#ff6a4d;}
   .zoomgroup{display:flex;gap:4px;}
-  .zoomgroup button{width:30px;height:30px;border-radius:6px;border:1px solid var(--line);background:#232325;color:var(--ink);cursor:pointer;font-size:14px;}
+  .zoomgroup button{width:40px;height:30px;border-radius:6px;border:1px solid var(--line);background:#232325;color:var(--ink);cursor:pointer;font-size:12px;}
   .pangroup{display:grid;grid-template-columns:repeat(3,26px);grid-template-rows:repeat(2,26px);gap:2px;}
   .pangroup button{border-radius:5px;border:1px solid var(--line);background:#232325;color:var(--muted);cursor:pointer;font-size:12px;}
   .pangroup button:hover{color:var(--ink);}
@@ -105,7 +105,7 @@
 
   .main{display:flex;gap:16px;align-items:flex-start;}
   .canvaswrap{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px;}
-  .viewport{width:740px;height:560px;overflow:auto;background:#1c1c1e;border-radius:6px;}
+  .viewport{width:740px;height:560px;overflow:auto;background:#1c1c1e;border-radius:6px;resize:both;min-width:360px;min-height:280px;max-width:96vw;max-height:85vh;}
   svg{display:block;cursor:crosshair;}
   .hint{font-size:11px;color:var(--muted);margin-top:8px;min-height:14px;}
   .hint.warn{color:#ff9e4d;}
@@ -203,8 +203,8 @@
     <div class="tgroup">
       <label>Zoom</label>
       <div class="zoomgroup">
-        <button onclick="changeZoom(-0.15)">−</button>
-        <button onclick="changeZoom(0.15)">+</button>
+        <button onclick="changeZoom(-0.15)" title="Alejar">🔍−</button>
+        <button onclick="changeZoom(0.15)" title="Acercar">🔍+</button>
       </div>
     </div>
     <div class="tgroup">
@@ -562,29 +562,32 @@ function categoryKind(id){ const c = categories.find(c=>c.id===id); return c ? c
 const pointMaterials = [
   {id:'p1', name:'Poste 3m', shape:'cross', color:'#ff2d2d', isPoste:true, category:'postes'},
   {id:'p2', name:'Poste 2.5m', shape:'dot', color:'#ff2d2d', isPoste:true, category:'postes'},
-  {id:'p3', name:'LED', shape:'led', color:'#ffe14d', isPoste:false, category:'iluminacion',
+  {id:'p3', name:'LED', shape:'led', color:'#ffe14d', isPoste:false, category:'iluminacion', betweenPoints:true,
     extras:[{label:'Salida a cuadro', factor:1, insertAfterId:'p3'}]},
   {id:'p4', name:'Cuadro', shape:'cuadro', color:'#9aa5ad', isPoste:false, category:'iluminacion', centerCell:true},
 ];
 const lineMaterials = [
-  {id:'l1', name:'Tiranta 2m', color:'#4fd1ff', len:2, unitsOnly:true, category:'tirantas'},
-  {id:'l2', name:'Tiranta 3m', color:'#2fd9a0', len:3, unitsOnly:true, category:'tirantas'},
-  {id:'l3', name:'Tiranta 4m', color:'#4d79ff', len:4, unitsOnly:true, category:'tirantas'},
+  {id:'l1', name:'Tiranta 2m', color:'#1e5fb4', len:2, unitsOnly:true, category:'tirantas'},
+  {id:'l2', name:'Tiranta 3m', color:'#e53935', len:3, unitsOnly:true, category:'tirantas'},
+  {id:'l3', name:'Tiranta 4m', color:'#2e8b57', len:4, unitsOnly:true, category:'tirantas'},
+  {id:'m1', name:'Mainel 1m', color:'#c9a227', len:1, unitsOnly:true, category:'tirantas'},
+  {id:'m2', name:'Mainel 1m Cubo', color:'#c9a227', len:1, unitsOnly:true, category:'tirantas', doubleLine:true,
+    extras:[{targetId:'m1', factor:2}]},
   {id:'l4a', name:'Mampara 1C', color:'#c026d3', len:1, autoConnect:true, unitsOnly:true, category:'mamparas',
-    extras:[{label:'Mainel 1m', factor:2, insertAfterId:'l4b'}]},
+    extras:[{targetId:'m1', factor:2}]},
   {id:'l4b', name:'Mampara 2C', color:'#65d600', len:1, autoConnect:true, unitsOnly:true, category:'mamparas',
-    extras:[{label:'Mainel 1m', factor:2, insertAfterId:'l4b'}]},
+    extras:[{targetId:'m1', factor:2}]},
   {id:'l5s', name:'Cartela pequeña', color:'#4a4a4a', len:1, unitsOnly:true, category:'cartelas', strokeWidth:4},
   {id:'l5', name:'Cartela 1m', color:'#2b6fff', len:1, unitsOnly:true, category:'cartelas',
-    extras:[{label:'Mainel 1m', factor:2, insertAfterId:'l4b'}]},
+    extras:[{targetId:'m1', factor:2}]},
   {id:'l6', name:'Cartela 2m', color:'#ff8a00', len:2, unitsOnly:true, category:'cartelas',
     extras:[{targetId:'l1', factor:2}]},
   {id:'l7', name:'Cartela 3m', color:'#00b368', len:3, unitsOnly:true, category:'cartelas'},
   {id:'l8', name:'Cartela 4m', color:'#d6249b', len:4, unitsOnly:true, category:'cartelas'},
   {id:'d1', name:'Puerta derecha', color:'#14b8a6', autoConnect:true, unitsOnly:true, category:'puertas',
-    renderAs:'door', side:'derecha', extras:[{label:'Mainel 1m', factor:2, insertAfterId:'l4b'}]},
+    renderAs:'door', side:'derecha', extras:[{targetId:'m1', factor:2}]},
   {id:'d2', name:'Puerta izquierda', color:'#f43f5e', autoConnect:true, unitsOnly:true, category:'puertas',
-    renderAs:'door', side:'izquierda', extras:[{label:'Mainel 1m', factor:2, insertAfterId:'l4b'}]},
+    renderAs:'door', side:'izquierda', extras:[{targetId:'m1', factor:2}]},
 ];
 let areaMaterials = [
   {id:'a1', name:'Moqueta', color:'#ff2d2d', category:'moqueta', measureArea:true},
@@ -592,7 +595,7 @@ let areaMaterials = [
 let areaColorCounter = 2;
 let allMaterials = [...pointMaterials, ...lineMaterials, ...areaMaterials];
 function rebuildAllMaterials(){ allMaterials = [...pointMaterials, ...lineMaterials, ...areaMaterials]; }
-const displayOrder = ['p1','p2','p3','p4','l1','l2','l3','l4a','l4b','d1','d2','l5s','l5','l6','l7','l8'];
+const displayOrder = ['p1','p2','p3','p4','l1','l2','l3','m1','m2','l4a','l4b','d1','d2','l5s','l5','l6','l7','l8'];
 function matById(id){ return allMaterials.find(m=>m.id===id); }
 
 let selected = { postes:'p1', iluminacion:'p3', mamparas:'l4a', puertas:'d1', cartelas:'l5', tirantas:'l1', moqueta:'a1' };
@@ -647,9 +650,24 @@ function pan(dx,dy){
 function applyGridSize(){
   const w = Math.max(5, parseInt(document.getElementById('gridW').value)||50);
   const h = Math.max(5, parseInt(document.getElementById('gridH').value)||60);
-  if(elements.length) snapshotUndo();
-  COLS = w; ROWS = h;
-  elements = [];
+
+  // Nunca ocultamos lo ya dibujado: si el tamaño pedido se queda corto, lo ampliamos lo justo.
+  let neededW = w, neededH = h;
+  elements.forEach(el=>{
+    if(el.type==='punto'){
+      neededW = Math.max(neededW, Math.ceil(el.x/UNIT)+1);
+      neededH = Math.max(neededH, Math.ceil(el.y/UNIT)+1);
+    } else {
+      neededW = Math.max(neededW, Math.ceil(Math.max(el.x1,el.x2)/UNIT)+1);
+      neededH = Math.max(neededH, Math.ceil(Math.max(el.y1,el.y2)/UNIT)+1);
+    }
+  });
+  if(neededW>w || neededH>h){
+    flashHint('Había elementos fuera de ese tamaño, así que he ampliado la cuadrícula lo justo para no ocultar nada.');
+  }
+  COLS = neededW; ROWS = neededH;
+  document.getElementById('gridW').value = COLS;
+  document.getElementById('gridH').value = ROWS;
   applyZoomStyle();
   render(); renderLegend();
 }
@@ -704,10 +722,13 @@ function drawDoorSymbol(m, x1, y1, x2, y2, id){
   if(m.side==='derecha'){ px=-uy; py=ux; sweepFlag=1; }
   else { px=uy; py=-ux; sweepFlag=0; }
   const leafX = x1+px*L, leafY = y1+py*L;
+  const letter = m.side==='derecha' ? 'D' : 'I';
   return `<g data-id="${id}" style="cursor:pointer">
     <line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${m.color}" stroke-width="1" stroke-dasharray="3,2"/>
     <line x1="${x1}" y1="${y1}" x2="${leafX}" y2="${leafY}" stroke="${m.color}" stroke-width="1.3"/>
     <path d="M ${leafX} ${leafY} A ${L} ${L} 0 0 ${sweepFlag} ${x2} ${y2}" fill="none" stroke="${m.color}" stroke-width="1"/>
+    <circle cx="${x1}" cy="${y1}" r="6" fill="none" stroke="${m.color}" stroke-width="1.3"/>
+    <text x="${x1}" y="${y1+2.8}" font-size="7.5" font-weight="700" fill="${m.color}" text-anchor="middle" font-family="monospace">${letter}</text>
   </g>`;
 }
 
@@ -723,6 +744,16 @@ function buildElementsSvgContent(forPrint){
       content += `<rect data-id="${el.id}" x="${el.x1}" y="${el.y1}" width="${el.x2-el.x1}" height="${el.y2-el.y1}" fill="${m.color}" fill-opacity="0.14" stroke="${m.color}" stroke-width="1" stroke-dasharray="4,3" style="cursor:pointer"/>`;
     } else if(m.renderAs==='door'){
       content += drawDoorSymbol(m, el.x1, el.y1, el.x2, el.y2, el.id);
+    } else if(m.doubleLine){
+      const ddx = el.x2-el.x1, ddy = el.y2-el.y1;
+      const L = Math.hypot(ddx,ddy) || 1;
+      const perpX = -ddy/L, perpY = ddx/L;
+      const off = 2.2;
+      const ox = perpX*off, oy = perpY*off;
+      content += `<g data-id="${el.id}" style="cursor:pointer">
+        <line x1="${el.x1+ox}" y1="${el.y1+oy}" x2="${el.x2+ox}" y2="${el.y2+oy}" stroke="${m.color}" stroke-width="1.4" stroke-linecap="round"/>
+        <line x1="${el.x1-ox}" y1="${el.y1-oy}" x2="${el.x2-ox}" y2="${el.y2-oy}" stroke="${m.color}" stroke-width="1.4" stroke-linecap="round"/>
+      </g>`;
     } else {
       const sw = m.strokeWidth || 2;
       content += `<line data-id="${el.id}" x1="${el.x1}" y1="${el.y1}" x2="${el.x2}" y2="${el.y2}" stroke="${m.color}" stroke-width="${sw}" stroke-linecap="round" style="cursor:pointer"/>`;
@@ -810,6 +841,7 @@ function baseHintForMode(){
   const kind = categoryKind(mode);
   if(kind==='punto'){
     const mat = matById(selected[mode]);
+    if(mat && mat.betweenPoints) return 'Clic en un punto y clic en otro: el LED se coloca justo en el punto medio entre ambos.';
     if(mat && mat.centerCell) return 'Clic sobre una celda: el símbolo se centra solo en medio del cuadro (no se ajusta a las esquinas).';
     return 'Clic sobre la cuadrícula para colocar el símbolo seleccionado.';
   }
@@ -921,7 +953,22 @@ function placeAutoConnect(mat, rawX, rawY){
 
 svg.addEventListener('mousemove', (e)=>{
   const kind = categoryKind(mode);
-  if(kind==='linea' && lineStart){
+  if(kind==='punto' && lineStart){
+    const mat = matById(selected[mode]);
+    if(!mat || !mat.betweenPoints) return;
+    const {x:rawX, y:rawY} = getLogicalCoords(e);
+    const x = Math.min(COLS*UNIT, Math.max(0, snap(rawX)));
+    const y = Math.min(ROWS*UNIT, Math.max(0, snap(rawY)));
+    const preview = document.getElementById('previewLine');
+    if(preview){
+      preview.setAttribute('x1', lineStart.x);
+      preview.setAttribute('y1', lineStart.y);
+      preview.setAttribute('x2', x);
+      preview.setAttribute('y2', y);
+      preview.setAttribute('stroke', mat.color);
+      preview.setAttribute('visibility', 'visible');
+    }
+  } else if(kind==='linea' && lineStart){
     const mat = matById(selected[mode]);
     if(!mat || mat.autoConnect) return;
     const {x:rawX, y:rawY} = getLogicalCoords(e);
@@ -958,6 +1005,22 @@ svg.addEventListener('click', (e)=>{
 
   if(kind==='punto'){
     const mat = matById(selected[mode]);
+    if(mat.betweenPoints){
+      const x = Math.min(COLS*UNIT, Math.max(0, snap(rawX)));
+      const y = Math.min(ROWS*UNIT, Math.max(0, snap(rawY)));
+      if(!lineStart){
+        lineStart = {x,y};
+        render();
+      } else {
+        const midX = (lineStart.x + x)/2;
+        const midY = (lineStart.y + y)/2;
+        snapshotUndo();
+        elements.push({id:'e'+(elIdCounter++), type:'punto', matId:mat.id, x:midX, y:midY});
+        lineStart = null;
+        render(); renderLegend();
+      }
+      return;
+    }
     let x, y;
     if(mat.centerCell){
       x = snapCellCenter(rawX);
