@@ -141,6 +141,8 @@
     .legend{flex:none !important;width:100% !important;margin-top:5mm;}
     .legend .num{color:#000 !important;}
     .hint{display:none !important;}
+    body.print-mode-listado #printArea{display:none !important;}
+    body.print-mode-plano .legend{display:none !important;}
   }
 
   .btn-primary{background:var(--accent) !important;border-color:var(--accent) !important;color:var(--accent-ink) !important;font-weight:700;}
@@ -163,6 +165,21 @@
     </div>
     <div class="overlay-footer">
       <button class="smallbtn" onclick="closeOverlaySkip()">Trabajar sin guardar →</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay hidden" id="printChoiceOverlay">
+  <div class="overlay-box" style="width:400px;">
+    <h2>¿Qué quieres imprimir?</h2>
+    <div class="sub2">Elige qué se incluye en la impresión o el PDF del navegador.</div>
+    <div style="display:flex;flex-direction:column;gap:10px;">
+      <button class="smallbtn btn-primary" onclick="doPrint('todo')">Plano + Listado (todo)</button>
+      <button class="smallbtn" onclick="doPrint('plano')">Solo el plano — ajustado al folio, más grande</button>
+      <button class="smallbtn" onclick="doPrint('listado')">Solo el listado de materiales</button>
+    </div>
+    <div class="overlay-footer">
+      <button class="smallbtn" onclick="document.getElementById('printChoiceOverlay').classList.add('hidden')">Cancelar</button>
     </div>
   </div>
 </div>
@@ -192,6 +209,9 @@
         <button class="modebtn" id="btn_cartelas" onclick="setMode('cartelas')">Cartelas</button>
         <button class="modebtn" id="btn_tirantas" onclick="setMode('tirantas')">Tirantas</button>
         <button class="modebtn" id="btn_moqueta" onclick="setMode('moqueta')">Moqueta</button>
+        <button class="modebtn" id="btn_seleccionar" onclick="setMode('seleccionar')">↕ Seleccionar</button>
+        <button class="modebtn" id="btn_texto" onclick="setMode('texto')">🔤 Texto</button>
+        <button class="modebtn" id="btn_pared" onclick="setMode('pared')">▬ Pared</button>
         <button class="modebtn" id="btn_borrar" onclick="setMode('borrar')">✕ Borrar</button>
       </div>
     </div>
@@ -507,6 +527,25 @@ function rgbStringToHex(rgb){
   const toHex = n => (+n).toString(16).padStart(2,'0');
   return '#' + toHex(m[1]) + toHex(m[2]) + toHex(m[3]);
 }
+function hslToHex(h,s,l){
+  s/=100; l/=100;
+  const c=(1-Math.abs(2*l-1))*s, x=c*(1-Math.abs((h/60)%2-1)), m=l-c/2;
+  let r,g,b;
+  if(h<60){r=c;g=x;b=0;} else if(h<120){r=x;g=c;b=0;} else if(h<180){r=0;g=c;b=x;}
+  else if(h<240){r=0;g=x;b=c;} else if(h<300){r=x;g=0;b=c;} else {r=c;g=0;b=x;}
+  const toHex=v=>Math.round((v+m)*255).toString(16).padStart(2,'0');
+  return '#'+toHex(r)+toHex(g)+toHex(b);
+}
+// Genera un color estable a partir del texto escrito, para que cualquier nombre
+// que no reconozcamos (ej. "azul eléctrico") siempre pueda crearse igualmente.
+function colorFromText(raw){
+  let hash = 0;
+  for(let i=0;i<raw.length;i++){ hash = (hash*31 + raw.charCodeAt(i)) >>> 0; }
+  const hue = hash % 360;
+  const sat = 55 + (hash % 30);
+  const light = 42 + ((hash>>3) % 16);
+  return hslToHex(hue, sat, light);
+}
 function resolveColorInput(raw){
   const key = normalizeColorKey(raw);
   if(spanishColorDict[key]) return spanishColorDict[key];
@@ -514,11 +553,16 @@ function resolveColorInput(raw){
   const probe = document.createElement('span');
   probe.style.color = '';
   probe.style.color = raw;
-  if(!probe.style.color) return null;
-  document.body.appendChild(probe);
-  const rgb = getComputedStyle(probe).color;
-  document.body.removeChild(probe);
-  return rgbStringToHex(rgb);
+  if(probe.style.color){
+    document.body.appendChild(probe);
+    const rgb = getComputedStyle(probe).color;
+    document.body.removeChild(probe);
+    const hex = rgbStringToHex(rgb);
+    if(hex) return hex;
+  }
+  // Si no lo reconoce nadie, generamos un color propio pero estable para ese nombre,
+  // así cualquier color que escriba el usuario se puede adjuntar siempre.
+  return colorFromText(key || raw);
 }
 
 function createMoquetaColor(){
@@ -565,21 +609,21 @@ function categoryKind(id){ const c = categories.find(c=>c.id===id); return c ? c
 //    debajo del material indicado en insertAfterId.
 const pointMaterials = [
   {id:'p1', name:'Poste 3m', shape:'cross', color:'#ff2d2d', isPoste:true, category:'postes'},
-  {id:'p2', name:'Poste 2.5m', shape:'dot', color:'#ff2d2d', isPoste:true, category:'postes'},
+  {id:'p2', name:'Poste 2.5m', shape:'dot', color:'#ff2d2d', isPoste:true, category:'postes', len:2.5, fillLine:true},
   {id:'p3', name:'LED', shape:'led', color:'#ffe14d', isPoste:false, category:'iluminacion', betweenPoints:true,
     extras:[{label:'Salida a cuadro', factor:1, insertAfterId:'p3'}]},
   {id:'p4', name:'Cuadro', shape:'cuadro', color:'#9aa5ad', isPoste:false, category:'iluminacion', centerCell:true},
 ];
 const lineMaterials = [
-  {id:'l1', name:'Tiranta 2m', color:'#1e5fb4', len:2, unitsOnly:true, category:'tirantas'},
-  {id:'l2', name:'Tiranta 3m', color:'#e53935', len:3, unitsOnly:true, category:'tirantas'},
-  {id:'l3', name:'Tiranta 4m', color:'#2e8b57', len:4, unitsOnly:true, category:'tirantas'},
+  {id:'l1', name:'Tiranta 2m', color:'#1e5fb4', len:2, unitsOnly:true, category:'tirantas', dashed:true},
+  {id:'l2', name:'Tiranta 3m', color:'#e53935', len:3, unitsOnly:true, category:'tirantas', dashed:true},
+  {id:'l3', name:'Tiranta 4m', color:'#2e8b57', len:4, unitsOnly:true, category:'tirantas', dashed:true},
   {id:'m1', name:'Mainel 1m', color:'#c9a227', len:1, unitsOnly:true, category:'tirantas'},
   {id:'m2', name:'Mainel 1m Cubo', color:'#c9a227', len:1, unitsOnly:true, category:'tirantas', doubleLine:true,
     extras:[{targetId:'m1', factor:2}]},
-  {id:'l4a', name:'Mampara 1C', color:'#c026d3', len:1, autoConnect:true, unitsOnly:true, category:'mamparas',
+  {id:'l4a', name:'Mampara 1C', color:'#c026d3', len:1, fillLine:true, unitsOnly:true, category:'mamparas',
     extras:[{targetId:'m1', factor:2}]},
-  {id:'l4b', name:'Mampara 2C', color:'#65d600', len:1, autoConnect:true, unitsOnly:true, category:'mamparas',
+  {id:'l4b', name:'Mampara 2C', color:'#65d600', len:1, fillLine:true, unitsOnly:true, category:'mamparas',
     extras:[{targetId:'m1', factor:2}]},
   {id:'l5s', name:'Cartela pequeña', color:'#4a4a4a', len:1, unitsOnly:true, category:'cartelas', strokeWidth:4},
   {id:'l5', name:'Cartela 1m', color:'#2b6fff', len:1, unitsOnly:true, category:'cartelas',
@@ -609,6 +653,17 @@ let elIdCounter = 1;
 let lineStart = null;
 let hintTimeout = null;
 let undoStack = [];
+
+// ---------- Selección y movimiento ----------
+let selectedIds = new Set();
+let selDrag = null;   // {startX,startY,origin:Map(id->coords),dx,dy}
+let rubberRect = null; // {x1,y1,x2,y2} rectángulo de selección mientras se arrastra
+
+// ---------- Texto libre ----------
+let textConfig = { size:16, color:'#f5c518', colorName:'amarillo' };
+
+// ---------- Paredes / líneas de referencia (no cuentan en el listado) ----------
+let freeLineConfig = { width:3, color:'#9a9a9d', colorName:'gris' };
 
 const svg = document.getElementById('canvas');
 const viewport = document.getElementById('viewport');
@@ -658,7 +713,7 @@ function applyGridSize(){
   // Nunca ocultamos lo ya dibujado: si el tamaño pedido se queda corto, lo ampliamos lo justo.
   let neededW = w, neededH = h;
   elements.forEach(el=>{
-    if(el.type==='punto'){
+    if(el.type==='punto' || el.type==='texto'){
       neededW = Math.max(neededW, Math.ceil(el.x/UNIT)+1);
       neededH = Math.max(neededH, Math.ceil(el.y/UNIT)+1);
     } else {
@@ -736,31 +791,54 @@ function drawDoorSymbol(m, x1, y1, x2, y2, id){
   </g>`;
 }
 
-function buildElementsSvgContent(forPrint){
+function buildElementsSvgContent(forPrint, opts){
+  opts = opts || {};
+  const selIds = opts.selectedIds || null;
+  const dragDelta = opts.dragDelta || null;
   let content = drawGrid(!!forPrint);
   content += '<g id="elLayer">';
   elements.forEach(el=>{
-    const m = matById(el.matId);
-    if(!m) return;
-    if(el.type==='punto'){
-      content += drawPointSymbol(m, el.x, el.y, el.id);
-    } else if(el.type==='area'){
-      content += `<rect data-id="${el.id}" x="${el.x1}" y="${el.y1}" width="${el.x2-el.x1}" height="${el.y2-el.y1}" fill="${m.color}" fill-opacity="0.14" stroke="${m.color}" stroke-width="1" stroke-dasharray="4,3" style="cursor:pointer"/>`;
-    } else if(m.renderAs==='door'){
-      content += drawDoorSymbol(m, el.x1, el.y1, el.x2, el.y2, el.id);
-    } else if(m.doubleLine){
-      const ddx = el.x2-el.x1, ddy = el.y2-el.y1;
-      const L = Math.hypot(ddx,ddy) || 1;
-      const perpX = -ddy/L, perpY = ddx/L;
-      const off = 2.2;
-      const ox = perpX*off, oy = perpY*off;
-      content += `<g data-id="${el.id}" style="cursor:pointer">
-        <line x1="${el.x1+ox}" y1="${el.y1+oy}" x2="${el.x2+ox}" y2="${el.y2+oy}" stroke="${m.color}" stroke-width="1.4" stroke-linecap="round"/>
-        <line x1="${el.x1-ox}" y1="${el.y1-oy}" x2="${el.x2-ox}" y2="${el.y2-oy}" stroke="${m.color}" stroke-width="1.4" stroke-linecap="round"/>
-      </g>`;
+    let piece = '';
+    if(el.type==='texto'){
+      piece = drawTextSymbol(el);
+    } else if(el.type==='freeline'){
+      piece = drawFreeLineSymbol(el);
     } else {
-      const sw = m.strokeWidth || 2;
-      content += `<line data-id="${el.id}" x1="${el.x1}" y1="${el.y1}" x2="${el.x2}" y2="${el.y2}" stroke="${m.color}" stroke-width="${sw}" stroke-linecap="round" style="cursor:pointer"/>`;
+      const m = matById(el.matId);
+      if(!m) return;
+      if(el.type==='punto'){
+        piece = drawPointSymbol(m, el.x, el.y, el.id);
+      } else if(el.type==='area'){
+        piece = `<rect data-id="${el.id}" x="${el.x1}" y="${el.y1}" width="${el.x2-el.x1}" height="${el.y2-el.y1}" fill="${m.color}" fill-opacity="0.14" stroke="${m.color}" stroke-width="1" stroke-dasharray="4,3" style="cursor:pointer"/>`;
+      } else if(m.renderAs==='door'){
+        piece = drawDoorSymbol(m, el.x1, el.y1, el.x2, el.y2, el.id);
+      } else if(m.doubleLine){
+        const ddx = el.x2-el.x1, ddy = el.y2-el.y1;
+        const L = Math.hypot(ddx,ddy) || 1;
+        const perpX = -ddy/L, perpY = ddx/L;
+        const off = 2.2;
+        const ox = perpX*off, oy = perpY*off;
+        piece = `<g data-id="${el.id}" style="cursor:pointer">
+          <line x1="${el.x1+ox}" y1="${el.y1+oy}" x2="${el.x2+ox}" y2="${el.y2+oy}" stroke="${m.color}" stroke-width="1.4" stroke-linecap="round"/>
+          <line x1="${el.x1-ox}" y1="${el.y1-oy}" x2="${el.x2-ox}" y2="${el.y2-oy}" stroke="${m.color}" stroke-width="1.4" stroke-linecap="round"/>
+        </g>`;
+      } else {
+        const sw = m.strokeWidth || 2;
+        const dashAttr = m.dashed ? ' stroke-dasharray="4,3"' : '';
+        piece = `<line data-id="${el.id}" x1="${el.x1}" y1="${el.y1}" x2="${el.x2}" y2="${el.y2}" stroke="${m.color}" stroke-width="${sw}"${dashAttr} stroke-linecap="round" style="cursor:pointer"/>`;
+      }
+    }
+    if(!piece) return;
+    const isSelected = !!(selIds && selIds.has(el.id));
+    if(isSelected && dragDelta){
+      piece = `<g transform="translate(${dragDelta.dx},${dragDelta.dy})">${piece}</g>`;
+    }
+    content += piece;
+    if(isSelected && !forPrint){
+      const b = elBBox(el);
+      const bx = dragDelta ? b.minX+dragDelta.dx : b.minX;
+      const by = dragDelta ? b.minY+dragDelta.dy : b.minY;
+      content += `<rect x="${bx-3}" y="${by-3}" width="${(b.maxX-b.minX)+6}" height="${(b.maxY-b.minY)+6}" fill="none" stroke="#f5c518" stroke-width="1.2" stroke-dasharray="3,2" style="pointer-events:none"/>`;
     }
   });
   content += '</g>';
@@ -768,12 +846,21 @@ function buildElementsSvgContent(forPrint){
 }
 
 function render(){
-  let content = buildElementsSvgContent(false);
+  const opts = {
+    selectedIds: (mode==='seleccionar' && selectedIds.size>0) ? selectedIds : null,
+    dragDelta: selDrag ? {dx:selDrag.dx, dy:selDrag.dy} : null
+  };
+  let content = buildElementsSvgContent(false, opts);
   if(lineStart){
     content += `<circle cx="${lineStart.x}" cy="${lineStart.y}" r="5" fill="none" stroke="#f0f0f0" stroke-width="1.5"/>`;
   }
   content += `<line id="previewLine" x1="0" y1="0" x2="0" y2="0" stroke="#f0f0f0" stroke-width="2" stroke-dasharray="5,4" visibility="hidden" style="pointer-events:none"/>`;
   content += `<rect id="previewRect" x="0" y="0" width="0" height="0" fill="#ff2d2d" fill-opacity="0.12" stroke="#ff2d2d" stroke-width="1.5" stroke-dasharray="5,4" visibility="hidden" style="pointer-events:none"/>`;
+  if(rubberRect){
+    const rx1=Math.min(rubberRect.x1,rubberRect.x2), rx2=Math.max(rubberRect.x1,rubberRect.x2);
+    const ry1=Math.min(rubberRect.y1,rubberRect.y2), ry2=Math.max(rubberRect.y1,rubberRect.y2);
+    content += `<rect x="${rx1}" y="${ry1}" width="${rx2-rx1}" height="${ry2-ry1}" fill="rgba(245,197,24,0.12)" stroke="#f5c518" stroke-width="1" stroke-dasharray="4,3" style="pointer-events:none"/>`;
+  }
   svg.innerHTML = content;
 
   svg.querySelectorAll('[data-id]').forEach(node=>{
@@ -804,6 +891,89 @@ function renderMatList(){
   if(mode==='borrar'){
     label.textContent = 'Borrar';
     list.innerHTML = '<span style="color:var(--muted);font-size:11.5px;">Haz clic sobre un símbolo o línea del plano para eliminarlo.</span>';
+    return;
+  }
+  if(mode==='seleccionar'){
+    label.textContent = 'Seleccionar';
+    list.innerHTML = '<span style="color:var(--muted);font-size:11.5px;">Arrastra sobre el plano para seleccionar varios elementos, o haz clic sobre uno solo. Vuelve a arrastrar desde dentro de la selección para moverla, sin que se borre ni se mueva nada más. Supr/Retroceso borra la selección.</span>';
+    return;
+  }
+  if(mode==='texto'){
+    label.textContent = 'Texto';
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'display:flex;gap:8px;align-items:center;flex-wrap:wrap;width:100%;';
+    const sizeLabel = document.createElement('span');
+    sizeLabel.style.cssText = 'font-size:10.5px;color:var(--muted);text-transform:uppercase;';
+    sizeLabel.textContent = 'Tamaño';
+    const sizeSel = document.createElement('select');
+    [12,14,16,20,26,32,40].forEach(s=>{
+      const o = document.createElement('option'); o.value = s; o.textContent = s+'px';
+      if(s===textConfig.size) o.selected = true;
+      sizeSel.appendChild(o);
+    });
+    sizeSel.onchange = ()=>{ textConfig.size = +sizeSel.value; };
+    const colorLabel = document.createElement('span');
+    colorLabel.style.cssText = 'font-size:10.5px;color:var(--muted);text-transform:uppercase;';
+    colorLabel.textContent = 'Color';
+    const colorInput = document.createElement('input');
+    colorInput.type = 'text';
+    colorInput.placeholder = 'ej. negro, azul marino…';
+    colorInput.style.width = '190px';
+    colorInput.value = textConfig.colorName || '';
+    const applyColor = ()=>{
+      const raw = colorInput.value.trim();
+      if(!raw) return;
+      textConfig.color = resolveColorInput(raw);
+      textConfig.colorName = raw;
+    };
+    colorInput.addEventListener('change', applyColor);
+    colorInput.addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); applyColor(); } });
+    wrap.appendChild(sizeLabel); wrap.appendChild(sizeSel);
+    wrap.appendChild(colorLabel); wrap.appendChild(colorInput);
+    list.appendChild(wrap);
+    const hint2 = document.createElement('div');
+    hint2.style.cssText = 'font-size:11px;color:var(--muted);margin-top:8px;width:100%;';
+    hint2.textContent = 'Clic sobre el plano para escribir una indicación (no cuenta en el listado). Clic sobre un texto puesto para editarlo o borrarlo.';
+    list.appendChild(hint2);
+    return;
+  }
+  if(mode==='pared'){
+    label.textContent = 'Pared / línea de referencia';
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'display:flex;gap:8px;align-items:center;flex-wrap:wrap;width:100%;';
+    const thickLabel = document.createElement('span');
+    thickLabel.style.cssText = 'font-size:10.5px;color:var(--muted);text-transform:uppercase;';
+    thickLabel.textContent = 'Grosor';
+    const thickSel = document.createElement('select');
+    [1,2,3,4,6,8,10,14].forEach(w=>{
+      const o = document.createElement('option'); o.value = w; o.textContent = w+'px';
+      if(w===freeLineConfig.width) o.selected = true;
+      thickSel.appendChild(o);
+    });
+    thickSel.onchange = ()=>{ freeLineConfig.width = +thickSel.value; };
+    const colorLabel = document.createElement('span');
+    colorLabel.style.cssText = 'font-size:10.5px;color:var(--muted);text-transform:uppercase;';
+    colorLabel.textContent = 'Color';
+    const colorInput = document.createElement('input');
+    colorInput.type = 'text';
+    colorInput.placeholder = 'ej. gris, negro…';
+    colorInput.style.width = '190px';
+    colorInput.value = freeLineConfig.colorName || '';
+    const applyColor = ()=>{
+      const raw = colorInput.value.trim();
+      if(!raw) return;
+      freeLineConfig.color = resolveColorInput(raw);
+      freeLineConfig.colorName = raw;
+    };
+    colorInput.addEventListener('change', applyColor);
+    colorInput.addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); applyColor(); } });
+    wrap.appendChild(thickLabel); wrap.appendChild(thickSel);
+    wrap.appendChild(colorLabel); wrap.appendChild(colorInput);
+    list.appendChild(wrap);
+    const hint2 = document.createElement('div');
+    hint2.style.cssText = 'font-size:11px;color:var(--muted);margin-top:8px;width:100%;';
+    hint2.textContent = 'Clic en el punto de inicio y clic en el punto final. Sirve para simular paredes de recintos ya existentes; no cuenta en el listado.';
+    list.appendChild(hint2);
     return;
   }
   const kind = categoryKind(mode);
@@ -842,17 +1012,24 @@ function renderMatList(){
 
 function baseHintForMode(){
   if(mode==='borrar') return 'Clic sobre un símbolo o línea del plano para eliminarlo.';
+  if(mode==='seleccionar') return 'Arrastra sobre el plano para seleccionar varios elementos, o haz clic sobre uno solo. Vuelve a arrastrar desde dentro de la selección para moverla. Supr/Retroceso para borrarla.';
+  if(mode==='texto') return 'Clic sobre el plano para escribir una indicación de texto (no se suma al listado). Clic sobre un texto ya puesto para editarlo.';
+  if(mode==='pared') return '1er clic: inicio. 2º clic: final — dibuja una línea/pared de referencia (no se suma al listado).';
   const kind = categoryKind(mode);
   if(kind==='punto'){
     const mat = matById(selected[mode]);
     if(mat && mat.betweenPoints) return 'Clic en un punto y clic en otro: el LED se coloca justo en el punto medio entre ambos.';
     if(mat && mat.centerCell) return 'Clic sobre una celda: el símbolo se centra solo en medio del cuadro (no se ajusta a las esquinas).';
+    if(mat && mat.fillLine) return `1er clic: inicio de la línea. 2º clic: final — se colocan automáticamente todos los ${mat.name} cada ${mat.len} m y se suman todos al total (ya no hace falta clicar uno a uno).`;
     return 'Clic sobre la cuadrícula para colocar el símbolo seleccionado.';
   }
   if(kind==='area'){
     return '1er clic: una esquina del área. 2º clic: la esquina opuesta. Se dibuja la moqueta entre ambas y se cuenta en m².';
   }
   const mat = matById(selected[mode]);
+  if(mat && mat.fillLine){
+    return `1er clic: inicio de la pared. 2º clic: final — se calculan automáticamente cuántas unidades de ${mat.name} hacen falta y se suman todas al total (ya no hace falta clicar unidad por unidad).`;
+  }
   if(mat && mat.autoConnect){
     return `Clic entre dos postes: se coloca un(a) ${mat.name} conectando los dos postes más cercanos a tu clic (cualquier distancia y dirección, sirve para zigzag).`;
   }
@@ -874,7 +1051,10 @@ function flashHint(msg){
 function setMode(newMode){
   mode = newMode;
   lineStart = null;
-  const allBtnIds = ['btn_postes','btn_iluminacion','btn_mamparas','btn_puertas','btn_cartelas','btn_tirantas','btn_moqueta','btn_borrar'];
+  selDrag = null;
+  rubberRect = null;
+  if(newMode!=='seleccionar') clearSelection();
+  const allBtnIds = ['btn_postes','btn_iluminacion','btn_mamparas','btn_puertas','btn_cartelas','btn_tirantas','btn_moqueta','btn_seleccionar','btn_texto','btn_pared','btn_borrar'];
   allBtnIds.forEach(id=>document.getElementById(id).classList.remove('active'));
   document.getElementById('btn_'+newMode).classList.add('active');
   renderMatList();
@@ -955,11 +1135,145 @@ function placeAutoConnect(mat, rawX, rawY){
   render(); renderLegend();
 }
 
+function drawTextSymbol(el){
+  const esc = s => (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const lines = (el.text||'').split('\n');
+  const tspans = lines.map((line,i)=>`<tspan x="${el.x}" dy="${i===0?0:Math.round(el.size*1.15)}">${esc(line)}</tspan>`).join('');
+  return `<text data-id="${el.id}" x="${el.x}" y="${el.y}" font-size="${el.size}" fill="${el.color}" font-family="var(--mono),monospace" style="cursor:pointer">${tspans}</text>`;
+}
+function drawFreeLineSymbol(el){
+  return `<line data-id="${el.id}" x1="${el.x1}" y1="${el.y1}" x2="${el.x2}" y2="${el.y2}" stroke="${el.color}" stroke-width="${el.width}" stroke-linecap="square" style="cursor:pointer"/>`;
+}
+
+// Caja delimitadora de cualquier tipo de elemento — se usa para seleccionar y mover.
+function elBBox(el){
+  if(el.type==='punto'){
+    return {minX:el.x-8, minY:el.y-8, maxX:el.x+8, maxY:el.y+8};
+  }
+  if(el.type==='texto'){
+    const lines = (el.text||'').split('\n');
+    const w = Math.max(24, Math.max(...lines.map(l=>l.length)) * el.size * 0.58);
+    const h = lines.length * el.size * 1.15 + 6;
+    return {minX:el.x-2, minY:el.y-el.size, maxX:el.x-2+w, maxY:el.y-el.size+h};
+  }
+  return {
+    minX:Math.min(el.x1,el.x2), minY:Math.min(el.y1,el.y2),
+    maxX:Math.max(el.x1,el.x2), maxY:Math.max(el.y1,el.y2)
+  };
+}
+function rectsOverlap(a,b){
+  return a.minX<=b.maxX && a.maxX>=b.minX && a.minY<=b.maxY && a.maxY>=b.minY;
+}
+function clearSelection(){ selectedIds.clear(); }
+function selectionBBox(){
+  if(selectedIds.size===0) return null;
+  let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
+  elements.forEach(el=>{
+    if(!selectedIds.has(el.id)) return;
+    const b = elBBox(el);
+    minX=Math.min(minX,b.minX); minY=Math.min(minY,b.minY);
+    maxX=Math.max(maxX,b.maxX); maxY=Math.max(maxY,b.maxY);
+  });
+  return {minX,minY,maxX,maxY};
+}
+function startMoveDrag(rawX,rawY){
+  const origin = new Map();
+  elements.forEach(el=>{
+    if(!selectedIds.has(el.id)) return;
+    if(el.type==='punto' || el.type==='texto') origin.set(el.id, {x:el.x, y:el.y});
+    else origin.set(el.id, {x1:el.x1,y1:el.y1,x2:el.x2,y2:el.y2});
+  });
+  selDrag = {startX:rawX, startY:rawY, origin, dx:0, dy:0};
+}
+
+svg.addEventListener('mousedown', (e)=>{
+  if(mode!=='seleccionar') return;
+  const {x:rawX, y:rawY} = getLogicalCoords(e);
+  const bbox = selectionBBox();
+  const insideSelection = bbox && rawX>=bbox.minX-4 && rawX<=bbox.maxX+4 && rawY>=bbox.minY-4 && rawY<=bbox.maxY+4;
+  if(insideSelection){
+    startMoveDrag(rawX, rawY);
+    return;
+  }
+  const hit = elements.slice().reverse().find(el=>{
+    const b = elBBox(el);
+    return rawX>=b.minX-3 && rawX<=b.maxX+3 && rawY>=b.minY-3 && rawY<=b.maxY+3;
+  });
+  if(hit){
+    selectedIds = new Set([hit.id]);
+    startMoveDrag(rawX, rawY);
+    render();
+    return;
+  }
+  clearSelection();
+  rubberRect = {x1:rawX, y1:rawY, x2:rawX, y2:rawY};
+  render();
+});
+
+document.addEventListener('mousemove', (e2)=>{
+  if(mode!=='seleccionar') return;
+  if(!selDrag && !rubberRect) return;
+  const {x:rawX, y:rawY} = getLogicalCoords(e2);
+  if(selDrag){
+    selDrag.dx = rawX - selDrag.startX;
+    selDrag.dy = rawY - selDrag.startY;
+    render();
+  } else if(rubberRect){
+    rubberRect.x2 = rawX; rubberRect.y2 = rawY;
+    render();
+  }
+});
+
+document.addEventListener('mouseup', (e2)=>{
+  if(mode!=='seleccionar') return;
+  if(!selDrag && !rubberRect) return;
+  if(selDrag){
+    const dx = snap(selDrag.dx), dy = snap(selDrag.dy);
+    if(dx!==0 || dy!==0){
+      snapshotUndo();
+      elements.forEach(el=>{
+        const o = selDrag.origin.get(el.id);
+        if(!o) return;
+        if(el.type==='punto' || el.type==='texto'){
+          el.x = Math.min(COLS*UNIT, Math.max(0, o.x+dx));
+          el.y = Math.min(ROWS*UNIT, Math.max(0, o.y+dy));
+        } else {
+          el.x1 = o.x1+dx; el.y1 = o.y1+dy; el.x2 = o.x2+dx; el.y2 = o.y2+dy;
+        }
+      });
+      renderLegend();
+    }
+    selDrag = null;
+    render();
+  } else if(rubberRect){
+    const rx1=Math.min(rubberRect.x1,rubberRect.x2), rx2=Math.max(rubberRect.x1,rubberRect.x2);
+    const ry1=Math.min(rubberRect.y1,rubberRect.y2), ry2=Math.max(rubberRect.y1,rubberRect.y2);
+    if(Math.abs(rx2-rx1)>3 || Math.abs(ry2-ry1)>3){
+      const rect = {minX:rx1, minY:ry1, maxX:rx2, maxY:ry2};
+      selectedIds = new Set(elements.filter(el=>rectsOverlap(elBBox(el), rect)).map(el=>el.id));
+      if(selectedIds.size===0) flashHint('No hay elementos dentro de la selección.');
+      else flashHint(selectedIds.size+' elemento(s) seleccionados. Arrastra desde dentro para moverlos.');
+    }
+    rubberRect = null;
+    render();
+  }
+});
+
+document.addEventListener('keydown', (e)=>{
+  if(mode==='seleccionar' && (e.key==='Delete' || e.key==='Backspace') && selectedIds.size>0){
+    e.preventDefault();
+    snapshotUndo();
+    elements = elements.filter(el=>!selectedIds.has(el.id));
+    clearSelection();
+    render(); renderLegend();
+  }
+});
+
 svg.addEventListener('mousemove', (e)=>{
   const kind = categoryKind(mode);
   if(kind==='punto' && lineStart){
     const mat = matById(selected[mode]);
-    if(!mat || !mat.betweenPoints) return;
+    if(!mat || !(mat.betweenPoints || mat.fillLine)) return;
     const {x:rawX, y:rawY} = getLogicalCoords(e);
     const x = Math.min(COLS*UNIT, Math.max(0, snap(rawX)));
     const y = Math.min(ROWS*UNIT, Math.max(0, snap(rawY)));
@@ -976,6 +1290,21 @@ svg.addEventListener('mousemove', (e)=>{
     const mat = matById(selected[mode]);
     if(!mat || mat.autoConnect) return;
     const {x:rawX, y:rawY} = getLogicalCoords(e);
+    if(mat.fillLine){
+      const x = Math.min(COLS*UNIT, Math.max(0, snap(rawX)));
+      const y = Math.min(ROWS*UNIT, Math.max(0, snap(rawY)));
+      const preview = document.getElementById('previewLine');
+      if(preview){
+        preview.setAttribute('x1', lineStart.x);
+        preview.setAttribute('y1', lineStart.y);
+        preview.setAttribute('x2', x);
+        preview.setAttribute('y2', y);
+        preview.setAttribute('stroke', mat.color);
+        preview.setAttribute('stroke-dasharray', '4,3');
+        preview.setAttribute('visibility', 'visible');
+      }
+      return;
+    }
     const end = constrainedEndpoint(lineStart, rawX, rawY, mat.len);
     const preview = document.getElementById('previewLine');
     if(preview){
@@ -984,6 +1313,23 @@ svg.addEventListener('mousemove', (e)=>{
       preview.setAttribute('x2', end.x);
       preview.setAttribute('y2', end.y);
       preview.setAttribute('stroke', mat.color);
+      preview.removeAttribute('stroke-dasharray');
+      preview.setAttribute('stroke-dasharray', '5,4');
+      preview.setAttribute('visibility', 'visible');
+    }
+  } else if(mode==='pared' && lineStart){
+    const {x:rawX, y:rawY} = getLogicalCoords(e);
+    const x = Math.min(COLS*UNIT, Math.max(0, snap(rawX)));
+    const y = Math.min(ROWS*UNIT, Math.max(0, snap(rawY)));
+    const preview = document.getElementById('previewLine');
+    if(preview){
+      preview.setAttribute('x1', lineStart.x);
+      preview.setAttribute('y1', lineStart.y);
+      preview.setAttribute('x2', x);
+      preview.setAttribute('y2', y);
+      preview.setAttribute('stroke', freeLineConfig.color);
+      preview.setAttribute('stroke-width', freeLineConfig.width);
+      preview.removeAttribute('stroke-dasharray');
       preview.setAttribute('visibility', 'visible');
     }
   } else if(kind==='area' && lineStart){
@@ -1025,6 +1371,28 @@ svg.addEventListener('click', (e)=>{
       }
       return;
     }
+    if(mat.fillLine){
+      const x = Math.min(COLS*UNIT, Math.max(0, snap(rawX)));
+      const y = Math.min(ROWS*UNIT, Math.max(0, snap(rawY)));
+      if(!lineStart){
+        lineStart = {x,y};
+        render();
+        return;
+      }
+      const dx = x-lineStart.x, dy = y-lineStart.y;
+      const distUnits = Math.hypot(dx,dy);
+      const spacing = mat.len*UNIT;
+      const n = Math.max(1, Math.round(distUnits/spacing));
+      const ux = distUnits ? dx/distUnits : 0, uy = distUnits ? dy/distUnits : 0;
+      snapshotUndo();
+      for(let i=0;i<=n;i++){
+        elements.push({id:'e'+(elIdCounter++), type:'punto', matId:mat.id, x:lineStart.x+ux*spacing*i, y:lineStart.y+uy*spacing*i});
+      }
+      lineStart = null;
+      render(); renderLegend();
+      flashHint('Colocados '+(n+1)+' '+mat.name+' ('+(distUnits/UNIT).toFixed(1)+' m).');
+      return;
+    }
     let x, y;
     if(mat.centerCell){
       x = snapCellCenter(rawX);
@@ -1047,13 +1415,30 @@ svg.addEventListener('click', (e)=>{
     if(!lineStart){
       lineStart = {x,y};
       render();
-    } else {
-      const end = constrainedEndpoint(lineStart, rawX, rawY, mat.len);
+      return;
+    }
+    if(mat.fillLine){
+      const dx = x-lineStart.x, dy = y-lineStart.y;
+      const distUnits = Math.hypot(dx,dy);
+      const spacing = mat.len*UNIT;
+      const n = Math.max(1, Math.round(distUnits/spacing));
+      const ux = distUnits ? dx/distUnits : 0, uy = distUnits ? dy/distUnits : 0;
       snapshotUndo();
-      elements.push({id:'e'+(elIdCounter++), type:'linea', matId:mat.id, x1:lineStart.x, y1:lineStart.y, x2:end.x, y2:end.y});
+      for(let i=0;i<n;i++){
+        const sx = lineStart.x+ux*spacing*i, sy = lineStart.y+uy*spacing*i;
+        const ex = lineStart.x+ux*spacing*(i+1), ey = lineStart.y+uy*spacing*(i+1);
+        elements.push({id:'e'+(elIdCounter++), type:'linea', matId:mat.id, x1:sx, y1:sy, x2:ex, y2:ey});
+      }
       lineStart = null;
       render(); renderLegend();
+      flashHint('Colocadas '+n+' unidades de '+mat.name+' ('+(distUnits/UNIT).toFixed(1)+' m).');
+      return;
     }
+    const end = constrainedEndpoint(lineStart, rawX, rawY, mat.len);
+    snapshotUndo();
+    elements.push({id:'e'+(elIdCounter++), type:'linea', matId:mat.id, x1:lineStart.x, y1:lineStart.y, x2:end.x, y2:end.y});
+    lineStart = null;
+    render(); renderLegend();
   } else if(kind==='area'){
     const mat = matById(selected[mode]);
     const x = Math.min(COLS*UNIT, Math.max(0, snap(rawX)));
@@ -1070,6 +1455,41 @@ svg.addEventListener('click', (e)=>{
       } else {
         flashHint('El área tiene que tener ancho y alto mayores que cero.');
       }
+      lineStart = null;
+      render(); renderLegend();
+    }
+  } else if(mode==='texto'){
+    const targetNode = e.target.closest && e.target.closest('[data-id]');
+    const targetId = targetNode ? targetNode.getAttribute('data-id') : null;
+    const existing = targetId ? elements.find(el=>el.id===targetId && el.type==='texto') : null;
+    if(existing){
+      const nuevo = prompt('Editar texto (déjalo vacío para borrarlo):', existing.text);
+      if(nuevo===null) return;
+      snapshotUndo();
+      if(nuevo.trim()===''){
+        elements = elements.filter(el=>el.id!==existing.id);
+      } else {
+        existing.text = nuevo;
+      }
+      render(); renderLegend();
+      return;
+    }
+    const texto = prompt('Escribe el texto de la indicación:');
+    if(!texto || !texto.trim()) return;
+    const x = Math.min(COLS*UNIT, Math.max(0, snap(rawX)));
+    const y = Math.min(ROWS*UNIT, Math.max(0, snap(rawY)));
+    snapshotUndo();
+    elements.push({id:'e'+(elIdCounter++), type:'texto', x, y, text:texto, size:textConfig.size, color:textConfig.color});
+    render(); renderLegend();
+  } else if(mode==='pared'){
+    const x = Math.min(COLS*UNIT, Math.max(0, snap(rawX)));
+    const y = Math.min(ROWS*UNIT, Math.max(0, snap(rawY)));
+    if(!lineStart){
+      lineStart = {x,y};
+      render();
+    } else {
+      snapshotUndo();
+      elements.push({id:'e'+(elIdCounter++), type:'freeline', x1:lineStart.x, y1:lineStart.y, x2:x, y2:y, width:freeLineConfig.width, color:freeLineConfig.color});
       lineStart = null;
       render(); renderLegend();
     }
@@ -1179,7 +1599,7 @@ function getDrawingBounds(){
   if(elements.length===0) return {minX:0, minY:0, maxX:COLS*UNIT, maxY:ROWS*UNIT};
   let minX=Infinity, minY=Infinity, maxX=-Infinity, maxY=-Infinity;
   elements.forEach(el=>{
-    if(el.type==='punto'){
+    if(el.type==='punto' || el.type==='texto'){
       minX=Math.min(minX, el.x); maxX=Math.max(maxX, el.x);
       minY=Math.min(minY, el.y); maxY=Math.max(maxY, el.y);
     } else {
@@ -1195,22 +1615,61 @@ function getDrawingBounds(){
   return {minX, minY, maxX, maxY};
 }
 
-function preparePrintSvg(){
+function applyPrintPageOrientation(landscape){
+  let style = document.getElementById('printPageOverride');
+  if(!style){
+    style = document.createElement('style');
+    style.id = 'printPageOverride';
+    document.head.appendChild(style);
+  }
+  style.textContent = `@media print{ @page{ size:A4 ${landscape?'landscape':'portrait'}; margin:8mm; } }`;
+}
+
+// mode: 'todo' (plano+listado), 'plano' (solo plano, ajustado al folio al máximo) o 'listado' (solo tabla)
+function preparePrintSvg(mode){
   const printArea = document.getElementById('printArea');
+  if(mode==='listado'){
+    printArea.innerHTML = '';
+    applyPrintPageOrientation(false);
+    return;
+  }
   const b = getDrawingBounds();
   const bw = b.maxX-b.minX, bh = b.maxY-b.minY;
   const aspect = bw/bh;
-  const maxWmm = 190, maxHmm = 145;
+  let maxWmm, maxHmm;
+  if(mode==='plano'){
+    // Sin la leyenda debajo: aprovechamos todo el folio, en la orientación que mejor encaje.
+    if(aspect >= 1){ maxWmm = 281; maxHmm = 194; applyPrintPageOrientation(true); }
+    else { maxWmm = 194; maxHmm = 281; applyPrintPageOrientation(false); }
+  } else {
+    maxWmm = 190; maxHmm = 145;
+    applyPrintPageOrientation(false);
+  }
   let wMm, hMm;
   if(aspect >= maxWmm/maxHmm){ wMm = maxWmm; hMm = maxWmm/aspect; }
   else { hMm = maxHmm; wMm = maxHmm*aspect; }
   const inner = buildElementsSvgContent(true);
   printArea.innerHTML = `<svg viewBox="${b.minX} ${b.minY} ${bw} ${bh}" width="${wMm.toFixed(1)}mm" height="${hMm.toFixed(1)}mm" xmlns="http://www.w3.org/2000/svg">${inner}</svg>`;
 }
-window.addEventListener('beforeprint', preparePrintSvg);
+
+let lastPrintMode = 'todo';
+window.addEventListener('beforeprint', ()=>preparePrintSvg(lastPrintMode));
+window.addEventListener('afterprint', ()=>{
+  document.body.classList.remove('print-mode-listado','print-mode-plano','print-mode-todo');
+});
+
+function doPrint(mode){
+  lastPrintMode = mode;
+  document.body.classList.remove('print-mode-listado','print-mode-plano','print-mode-todo');
+  document.body.classList.add('print-mode-'+mode);
+  preparePrintSvg(mode);
+  document.getElementById('printChoiceOverlay').classList.add('hidden');
+  setTimeout(()=>window.print(), 30);
+}
+
 document.getElementById('printBtn').addEventListener('click', function(){
-  preparePrintSvg();
-  window.print();
+  if(elements.length===0){ flashHint('Dibuja algo antes de imprimir.'); return; }
+  document.getElementById('printChoiceOverlay').classList.remove('hidden');
 });
 
 // Genera un PDF descargable directamente (sirve también en móviles, donde
