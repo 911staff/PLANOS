@@ -609,7 +609,7 @@ function categoryKind(id){ const c = categories.find(c=>c.id===id); return c ? c
 //    debajo del material indicado en insertAfterId.
 const pointMaterials = [
   {id:'p1', name:'Poste 3m', shape:'cross', color:'#ff2d2d', isPoste:true, category:'postes'},
-  {id:'p2', name:'Poste 2.5m', shape:'dot', color:'#ff2d2d', isPoste:true, category:'postes', len:2.5, fillLine:true},
+  {id:'p2', name:'Poste 2.5m', shape:'dot', color:'#ff2d2d', isPoste:true, category:'postes', len:2.5, spacing:1, fillLine:true},
   {id:'p3', name:'LED', shape:'led', color:'#ffe14d', isPoste:false, category:'iluminacion', betweenPoints:true,
     extras:[{label:'Salida a cuadro', factor:1, insertAfterId:'p3'}]},
   {id:'p4', name:'Cuadro', shape:'cuadro', color:'#9aa5ad', isPoste:false, category:'iluminacion', centerCell:true},
@@ -687,6 +687,7 @@ document.addEventListener('keydown', (e)=>{
 });
 
 function snap(v){ return Math.round(v/UNIT)*UNIT; }
+function snapHalf(v){ return Math.round(v/(UNIT/2))*(UNIT/2); }
 function snapCellCenter(v){
   const idx = Math.min(Math.max(Math.floor(v/UNIT),0), 100000);
   return idx*UNIT + UNIT/2;
@@ -1020,7 +1021,7 @@ function baseHintForMode(){
     const mat = matById(selected[mode]);
     if(mat && mat.betweenPoints) return 'Clic en un punto y clic en otro: el LED se coloca justo en el punto medio entre ambos.';
     if(mat && mat.centerCell) return 'Clic sobre una celda: el símbolo se centra solo en medio del cuadro (no se ajusta a las esquinas).';
-    if(mat && mat.fillLine) return `1er clic: inicio de la línea. 2º clic: final — se colocan automáticamente todos los ${mat.name} cada ${mat.len} m y se suman todos al total (ya no hace falta clicar uno a uno).`;
+    if(mat && mat.fillLine) return `1er clic: inicio de la línea. 2º clic: final — se coloca un ${mat.name} en cada metro (incluidos los dos extremos) y se suman todos al total. Doble clic en el mismo punto = un solo poste. Mantén Shift para trabajar cada 50 cm.`;
     return 'Clic sobre la cuadrícula para colocar el símbolo seleccionado.';
   }
   if(kind==='area'){
@@ -1275,8 +1276,9 @@ svg.addEventListener('mousemove', (e)=>{
     const mat = matById(selected[mode]);
     if(!mat || !(mat.betweenPoints || mat.fillLine)) return;
     const {x:rawX, y:rawY} = getLogicalCoords(e);
-    const x = Math.min(COLS*UNIT, Math.max(0, snap(rawX)));
-    const y = Math.min(ROWS*UNIT, Math.max(0, snap(rawY)));
+    const snapFn = (mat.fillLine && e.shiftKey) ? snapHalf : snap;
+    const x = Math.min(COLS*UNIT, Math.max(0, snapFn(rawX)));
+    const y = Math.min(ROWS*UNIT, Math.max(0, snapFn(rawY)));
     const preview = document.getElementById('previewLine');
     if(preview){
       preview.setAttribute('x1', lineStart.x);
@@ -1372,8 +1374,11 @@ svg.addEventListener('click', (e)=>{
       return;
     }
     if(mat.fillLine){
-      const x = Math.min(COLS*UNIT, Math.max(0, snap(rawX)));
-      const y = Math.min(ROWS*UNIT, Math.max(0, snap(rawY)));
+      // Shift pulsado = modo 50 cm (ajuste y separación cada 0,5 m). Normal = cada metro.
+      const half = e.shiftKey;
+      const snapFn = half ? snapHalf : snap;
+      const x = Math.min(COLS*UNIT, Math.max(0, snapFn(rawX)));
+      const y = Math.min(ROWS*UNIT, Math.max(0, snapFn(rawY)));
       if(!lineStart){
         lineStart = {x,y};
         render();
@@ -1381,16 +1386,24 @@ svg.addEventListener('click', (e)=>{
       }
       const dx = x-lineStart.x, dy = y-lineStart.y;
       const distUnits = Math.hypot(dx,dy);
-      const spacing = mat.len*UNIT;
-      const n = Math.max(1, Math.round(distUnits/spacing));
+      const spacing = (half ? 0.5 : (mat.spacing || mat.len))*UNIT;
+      const n = distUnits < 1 ? 0 : Math.max(1, Math.round(distUnits/spacing));
       const ux = distUnits ? dx/distUnits : 0, uy = distUnits ? dy/distUnits : 0;
+      // No duplicar un poste si ya hay uno igual en ese punto (p. ej. al encadenar tiradas en L)
+      const exists = (px,py)=>elements.some(el=>el.type==='punto' && el.matId===mat.id && Math.abs(el.x-px)<1 && Math.abs(el.y-py)<1);
       snapshotUndo();
+      let placed = 0;
       for(let i=0;i<=n;i++){
-        elements.push({id:'e'+(elIdCounter++), type:'punto', matId:mat.id, x:lineStart.x+ux*spacing*i, y:lineStart.y+uy*spacing*i});
+        const px = lineStart.x+ux*spacing*i, py = lineStart.y+uy*spacing*i;
+        if(exists(px,py)) continue;
+        elements.push({id:'e'+(elIdCounter++), type:'punto', matId:mat.id, x:px, y:py});
+        placed++;
       }
       lineStart = null;
       render(); renderLegend();
-      flashHint('Colocados '+(n+1)+' '+mat.name+' ('+(distUnits/UNIT).toFixed(1)+' m).');
+      flashHint(n===0
+        ? (placed ? 'Colocado 1 '+mat.name+'.' : 'Ya hay un '+mat.name+' en ese punto.')
+        : 'Colocados '+placed+' '+mat.name+' cada '+(spacing/UNIT).toString().replace('.',',')+' m ('+(distUnits/UNIT).toFixed(1).replace('.',',')+' m).');
       return;
     }
     let x, y;
