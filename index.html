@@ -632,9 +632,9 @@ const lineMaterials = [
     extras:[{targetId:'l1', factor:2}]},
   {id:'l7', name:'Cartela 3m', color:'#00b368', len:3, unitsOnly:true, category:'cartelas'},
   {id:'l8', name:'Cartela 4m', color:'#d6249b', len:4, unitsOnly:true, category:'cartelas'},
-  {id:'d1', name:'Puerta derecha', color:'#14b8a6', autoConnect:true, unitsOnly:true, category:'puertas',
+  {id:'d1', name:'Puerta derecha', color:'#14b8a6', len:1, unitsOnly:true, category:'puertas',
     renderAs:'door', side:'derecha', extras:[{targetId:'m1', factor:2}]},
-  {id:'d2', name:'Puerta izquierda', color:'#f43f5e', autoConnect:true, unitsOnly:true, category:'puertas',
+  {id:'d2', name:'Puerta izquierda', color:'#f43f5e', len:1, unitsOnly:true, category:'puertas',
     renderAs:'door', side:'izquierda', extras:[{targetId:'m1', factor:2}]},
 ];
 let areaMaterials = [
@@ -1030,6 +1030,9 @@ function baseHintForMode(){
   const mat = matById(selected[mode]);
   if(mat && mat.fillLine){
     return `1er clic: inicio de la pared. 2º clic: final — se calculan automáticamente cuántas unidades de ${mat.name} hacen falta y se suman todas al total (ya no hace falta clicar unidad por unidad).`;
+  }
+  if(mat && mat.renderAs==='door'){
+    return `1er clic: punto de la bisagra. 2º clic: hacia dónde va la puerta — se coloca siempre de 1 m, de punto a punto. Elige derecha o izquierda en la lista.`;
   }
   if(mat && mat.autoConnect){
     return `Clic entre dos postes: se coloca un(a) ${mat.name} conectando los dos postes más cercanos a tu clic (cualquier distancia y dirección, sirve para zigzag).`;
