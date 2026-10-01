@@ -86,6 +86,10 @@
   .tgroup{display:flex;flex-direction:column;gap:5px;}
   .tgroup label{font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);}
   select,input,button{font-family:var(--mono);}
+  select{background:#232325;border:1px solid var(--line);color:var(--ink);padding:6px 8px;border-radius:6px;font-size:12.5px;outline:none;}
+  .standrow{display:flex;gap:16px;align-items:flex-end;flex-wrap:wrap;width:100%;}
+  .standrow .chk{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);cursor:pointer;padding:6px 0;}
+  .standrow .orient{font-size:11px;color:var(--muted);margin-left:6px;}
   input[type=number],input[type=text]{
     background:#232325;border:1px solid var(--line);color:var(--ink);
     padding:7px 9px;border-radius:6px;font-size:12.5px;outline:none;width:70px;
@@ -189,7 +193,7 @@
     <h1>Plano de Materiales</h1>
     <input type="text" id="planName" placeholder="Nombre del plano (ej. Villanueva del Río)">
   </div>
-  <div class="sub">Vista en planta a escala real (1 cuadro = 1 metro). Ctrl+Z para deshacer, Ctrl+S para guardar.</div>
+  <div class="sub">Vista en planta a escala real (1 cuadro = 1 metro). Ctrl+Z para deshacer, Ctrl+S para guardar, Ctrl+C / Ctrl+V para copiar y pegar, R para girar.</div>
 
   <div class="projectbar">
     <button class="smallbtn" onclick="openProjectPicker()">📁 Mis proyectos</button>
@@ -199,9 +203,10 @@
   </div>
 
   <div class="toolbar">
-    <div class="tgroup" style="flex:1">
+    <div class="tgroup" style="flex:1 1 100%">
       <label>Categoría</label>
       <div style="display:flex;gap:6px;flex-wrap:wrap;">
+        <button class="modebtn" id="btn_stand" onclick="setMode('stand')">▦ Stand</button>
         <button class="modebtn active" id="btn_postes" onclick="setMode('postes')">Postes</button>
         <button class="modebtn" id="btn_iluminacion" onclick="setMode('iluminacion')">Iluminación</button>
         <button class="modebtn" id="btn_mamparas" onclick="setMode('mamparas')">Mamparas</button>
@@ -210,6 +215,7 @@
         <button class="modebtn" id="btn_tirantas" onclick="setMode('tirantas')">Tirantas</button>
         <button class="modebtn" id="btn_moqueta" onclick="setMode('moqueta')">Moqueta</button>
         <button class="modebtn" id="btn_seleccionar" onclick="setMode('seleccionar')">↕ Seleccionar</button>
+        <button class="modebtn" id="btn_pegar" onclick="startPaste()">⧉ Pegar</button>
         <button class="modebtn" id="btn_texto" onclick="setMode('texto')">🔤 Texto</button>
         <button class="modebtn" id="btn_pared" onclick="setMode('pared')">▬ Pared</button>
         <button class="modebtn" id="btn_borrar" onclick="setMode('borrar')">✕ Borrar</button>
@@ -621,9 +627,9 @@ const lineMaterials = [
   {id:'m1', name:'Mainel 1m', color:'#c9a227', len:1, unitsOnly:true, category:'tirantas'},
   {id:'m2', name:'Mainel 1m Cubo', color:'#c9a227', len:1, unitsOnly:true, category:'tirantas', doubleLine:true,
     extras:[{targetId:'m1', factor:2}]},
-  {id:'l4a', name:'Mampara 1C', color:'#c026d3', len:1, fillLine:true, unitsOnly:true, category:'mamparas',
+  {id:'l4a', name:'Mampara 1C', color:'#0d0d0d', len:1, fillLine:true, unitsOnly:true, category:'mamparas', strokeWidth:3.5, outline:true,
     extras:[{targetId:'m1', factor:2}]},
-  {id:'l4b', name:'Mampara 2C', color:'#65d600', len:1, fillLine:true, unitsOnly:true, category:'mamparas',
+  {id:'l4b', name:'Mampara 2C', color:'#a8a8ab', len:1, fillLine:true, unitsOnly:true, category:'mamparas', strokeWidth:3.5,
     extras:[{targetId:'m1', factor:2}]},
   {id:'l5s', name:'Cartela pequeña', color:'#4a4a4a', len:1, unitsOnly:true, category:'cartelas', strokeWidth:4},
   {id:'l5', name:'Cartela 1m', color:'#2b6fff', len:1, unitsOnly:true, category:'cartelas',
@@ -646,7 +652,7 @@ function rebuildAllMaterials(){ allMaterials = [...pointMaterials, ...lineMateri
 const displayOrder = ['p1','p2','p3','p4','l1','l2','l3','m1','m2','l4a','l4b','d1','d2','l5s','l5','l6','l7','l8'];
 function matById(id){ return allMaterials.find(m=>m.id===id); }
 
-let selected = { postes:'p1', iluminacion:'p3', mamparas:'l4a', puertas:'d1', cartelas:'l5', tirantas:'l1', moqueta:'a1' };
+let selected = { postes:'p1', iluminacion:'p3', mamparas:'l4b', puertas:'d1', cartelas:'l5', tirantas:'l1', moqueta:'a1' };
 let mode = 'postes';
 let elements = [];
 let elIdCounter = 1;
@@ -792,6 +798,39 @@ function drawDoorSymbol(m, x1, y1, x2, y2, id){
   </g>`;
 }
 
+function drawElement(el, forPrint){
+  if(el.type==='texto') return drawTextSymbol(el);
+  if(el.type==='freeline') return drawFreeLineSymbol(el);
+  const m = matById(el.matId);
+  if(!m) return '';
+  if(el.type==='punto') return drawPointSymbol(m, el.x, el.y, el.id);
+  if(el.type==='area'){
+    return `<rect data-id="${el.id}" x="${el.x1}" y="${el.y1}" width="${el.x2-el.x1}" height="${el.y2-el.y1}" fill="${m.color}" fill-opacity="0.14" stroke="${m.color}" stroke-width="1" stroke-dasharray="4,3" style="cursor:pointer"/>`;
+  }
+  if(m.renderAs==='door') return drawDoorSymbol(m, el.x1, el.y1, el.x2, el.y2, el.id);
+  if(m.doubleLine){
+    const ddx = el.x2-el.x1, ddy = el.y2-el.y1;
+    const L = Math.hypot(ddx,ddy) || 1;
+    const perpX = -ddy/L, perpY = ddx/L;
+    const off = 2.2;
+    const ox = perpX*off, oy = perpY*off;
+    return `<g data-id="${el.id}" style="cursor:pointer">
+      <line x1="${el.x1+ox}" y1="${el.y1+oy}" x2="${el.x2+ox}" y2="${el.y2+oy}" stroke="${m.color}" stroke-width="1.4" stroke-linecap="round"/>
+      <line x1="${el.x1-ox}" y1="${el.y1-oy}" x2="${el.x2-ox}" y2="${el.y2-oy}" stroke="${m.color}" stroke-width="1.4" stroke-linecap="round"/>
+    </g>`;
+  }
+  const sw = m.strokeWidth || 2;
+  const dashAttr = m.dashed ? ' stroke-dasharray="4,3"' : '';
+  if(m.outline && !forPrint){
+    // Mampara 1C: negra con un contorno claro para que se vea sobre el fondo oscuro de la pantalla.
+    return `<g data-id="${el.id}" style="cursor:pointer">
+      <line x1="${el.x1}" y1="${el.y1}" x2="${el.x2}" y2="${el.y2}" stroke="#d4d4d6" stroke-width="${sw+2.4}" stroke-linecap="round"/>
+      <line x1="${el.x1}" y1="${el.y1}" x2="${el.x2}" y2="${el.y2}" stroke="${m.color}" stroke-width="${sw}" stroke-linecap="round"/>
+    </g>`;
+  }
+  return `<line data-id="${el.id}" x1="${el.x1}" y1="${el.y1}" x2="${el.x2}" y2="${el.y2}" stroke="${m.color}" stroke-width="${sw}"${dashAttr} stroke-linecap="round" style="cursor:pointer"/>`;
+}
+
 function buildElementsSvgContent(forPrint, opts){
   opts = opts || {};
   const selIds = opts.selectedIds || null;
@@ -799,36 +838,7 @@ function buildElementsSvgContent(forPrint, opts){
   let content = drawGrid(!!forPrint);
   content += '<g id="elLayer">';
   elements.forEach(el=>{
-    let piece = '';
-    if(el.type==='texto'){
-      piece = drawTextSymbol(el);
-    } else if(el.type==='freeline'){
-      piece = drawFreeLineSymbol(el);
-    } else {
-      const m = matById(el.matId);
-      if(!m) return;
-      if(el.type==='punto'){
-        piece = drawPointSymbol(m, el.x, el.y, el.id);
-      } else if(el.type==='area'){
-        piece = `<rect data-id="${el.id}" x="${el.x1}" y="${el.y1}" width="${el.x2-el.x1}" height="${el.y2-el.y1}" fill="${m.color}" fill-opacity="0.14" stroke="${m.color}" stroke-width="1" stroke-dasharray="4,3" style="cursor:pointer"/>`;
-      } else if(m.renderAs==='door'){
-        piece = drawDoorSymbol(m, el.x1, el.y1, el.x2, el.y2, el.id);
-      } else if(m.doubleLine){
-        const ddx = el.x2-el.x1, ddy = el.y2-el.y1;
-        const L = Math.hypot(ddx,ddy) || 1;
-        const perpX = -ddy/L, perpY = ddx/L;
-        const off = 2.2;
-        const ox = perpX*off, oy = perpY*off;
-        piece = `<g data-id="${el.id}" style="cursor:pointer">
-          <line x1="${el.x1+ox}" y1="${el.y1+oy}" x2="${el.x2+ox}" y2="${el.y2+oy}" stroke="${m.color}" stroke-width="1.4" stroke-linecap="round"/>
-          <line x1="${el.x1-ox}" y1="${el.y1-oy}" x2="${el.x2-ox}" y2="${el.y2-oy}" stroke="${m.color}" stroke-width="1.4" stroke-linecap="round"/>
-        </g>`;
-      } else {
-        const sw = m.strokeWidth || 2;
-        const dashAttr = m.dashed ? ' stroke-dasharray="4,3"' : '';
-        piece = `<line data-id="${el.id}" x1="${el.x1}" y1="${el.y1}" x2="${el.x2}" y2="${el.y2}" stroke="${m.color}" stroke-width="${sw}"${dashAttr} stroke-linecap="round" style="cursor:pointer"/>`;
-      }
-    }
+    let piece = drawElement(el, forPrint);
     if(!piece) return;
     const isSelected = !!(selIds && selIds.has(el.id));
     if(isSelected && dragDelta){
@@ -862,13 +872,17 @@ function render(){
     const ry1=Math.min(rubberRect.y1,rubberRect.y2), ry2=Math.max(rubberRect.y1,rubberRect.y2);
     content += `<rect x="${rx1}" y="${ry1}" width="${rx2-rx1}" height="${ry2-ry1}" fill="rgba(245,197,24,0.12)" stroke="#f5c518" stroke-width="1" stroke-dasharray="4,3" style="pointer-events:none"/>`;
   }
+  if(ghost && ghostPos){
+    content += `<g id="ghostLayer" transform="translate(${ghostPos.x},${ghostPos.y})" opacity="0.6" style="pointer-events:none">${ghost.svg}</g>`;
+  }
   svg.innerHTML = content;
 
   svg.querySelectorAll('[data-id]').forEach(node=>{
     node.addEventListener('click', (e)=>{
       if(mode==='borrar'){
-        e.stopPropagation();
         const id = node.getAttribute('data-id');
+        if(!id) return;
+        e.stopPropagation();
         snapshotUndo();
         elements = elements.filter(el=>el.id!==id);
         render(); renderLegend();
@@ -885,10 +899,16 @@ function iconFor(m){
   return '';
 }
 
+function swatchFor(m){
+  return `<span class="swatch" style="background:${m.color};${m.outline?'box-shadow:0 0 0 1px #cfcfd1;':''}"></span>`;
+}
+
 function renderMatList(){
   const list = document.getElementById('matList');
   const label = document.getElementById('matListLabel');
   list.innerHTML = '';
+  if(mode==='stand'){ renderStandPanel(list, label); return; }
+  if(mode==='pegar'){ renderPastePanel(list, label); return; }
   if(mode==='borrar'){
     label.textContent = 'Borrar';
     list.innerHTML = '<span style="color:var(--muted);font-size:11.5px;">Haz clic sobre un símbolo o línea del plano para eliminarlo.</span>';
@@ -986,11 +1006,20 @@ function renderMatList(){
     chip.className = 'matchip' + (selected[mode]===m.id ? ' active':'');
     const swatchHtml = isPunto
       ? `<span style="display:inline-flex;width:14px;justify-content:center;color:${m.color};font-weight:900;">${iconFor(m)}</span>`
-      : `<span class="swatch" style="background:${m.color}"></span>`;
+      : swatchFor(m);
     chip.innerHTML = swatchHtml + m.name;
     chip.onclick = ()=>{ selected[mode]=m.id; lineStart=null; renderMatList(); render(); updateHint(); };
     list.appendChild(chip);
   });
+
+  if(mode==='mamparas'){
+    const chip = document.createElement('div');
+    chip.className = 'matchip' + (selected.mamparas==='toggleWall' ? ' active':'');
+    chip.textContent = '⇄ Cambiar 1C / 2C';
+    chip.title = 'Clic sobre una mampara ya dibujada para pasarla de 1C a 2C o al revés';
+    chip.onclick = ()=>{ selected.mamparas='toggleWall'; lineStart=null; renderMatList(); render(); updateHint(); };
+    list.appendChild(chip);
+  }
 
   if(mode==='moqueta'){
     const formWrap = document.createElement('div');
@@ -1012,8 +1041,11 @@ function renderMatList(){
 }
 
 function baseHintForMode(){
+  if(mode==='stand') return 'Mueve el ratón por el plano y haz clic para colocar el stand (la esquina de arriba a la izquierda va al cruce más cercano). Las paredes, postes y maineles que coincidan con otro stand no se duplican: la medianera pasa a 2C. R = girar.';
+  if(mode==='pegar') return 'Clic en el plano para pegar lo copiado (puedes pegar varias veces seguidas). R = girar, Esc = terminar. Lo que coincida con lo ya dibujado no se duplica.';
+  if(mode==='mamparas' && selected.mamparas==='toggleWall') return 'Clic sobre una mampara ya dibujada para cambiarla de 1C a 2C o al revés.';
   if(mode==='borrar') return 'Clic sobre un símbolo o línea del plano para eliminarlo.';
-  if(mode==='seleccionar') return 'Arrastra sobre el plano para seleccionar varios elementos, o haz clic sobre uno solo. Vuelve a arrastrar desde dentro de la selección para moverla. Supr/Retroceso para borrarla.';
+  if(mode==='seleccionar') return 'Arrastra sobre el plano para seleccionar varios elementos, o haz clic sobre uno solo. Vuelve a arrastrar desde dentro de la selección para moverla. Supr = borrar, Ctrl+C = copiar, 1 / 2 = pasar las mamparas seleccionadas a 1C / 2C.';
   if(mode==='texto') return 'Clic sobre el plano para escribir una indicación de texto (no se suma al listado). Clic sobre un texto ya puesto para editarlo.';
   if(mode==='pared') return '1er clic: inicio. 2º clic: final — dibuja una línea/pared de referencia (no se suma al listado).';
   const kind = categoryKind(mode);
@@ -1058,11 +1090,11 @@ function setMode(newMode){
   selDrag = null;
   rubberRect = null;
   if(newMode!=='seleccionar') clearSelection();
-  const allBtnIds = ['btn_postes','btn_iluminacion','btn_mamparas','btn_puertas','btn_cartelas','btn_tirantas','btn_moqueta','btn_seleccionar','btn_texto','btn_pared','btn_borrar'];
+  const allBtnIds = ['btn_stand','btn_postes','btn_iluminacion','btn_mamparas','btn_puertas','btn_cartelas','btn_tirantas','btn_moqueta','btn_seleccionar','btn_pegar','btn_texto','btn_pared','btn_borrar'];
   allBtnIds.forEach(id=>document.getElementById(id).classList.remove('active'));
   document.getElementById('btn_'+newMode).classList.add('active');
   renderMatList();
-  render();
+  refreshGhost();
   updateHint();
 }
 
@@ -1274,6 +1306,14 @@ document.addEventListener('keydown', (e)=>{
 });
 
 svg.addEventListener('mousemove', (e)=>{
+  if(ghost && (mode==='stand' || mode==='pegar')){
+    const {x:rawX, y:rawY} = getLogicalCoords(e);
+    ghostPos = ghostAnchor(rawX, rawY);
+    const g = document.getElementById('ghostLayer');
+    if(g) g.setAttribute('transform', `translate(${ghostPos.x},${ghostPos.y})`);
+    else render();
+    return;
+  }
   const kind = categoryKind(mode);
   if(kind==='punto' && lineStart){
     const mat = matById(selected[mode]);
@@ -1357,6 +1397,24 @@ svg.addEventListener('mousemove', (e)=>{
 svg.addEventListener('click', (e)=>{
   const {x:rawX, y:rawY} = getLogicalCoords(e);
   const kind = categoryKind(mode);
+
+  if(mode==='stand' || mode==='pegar'){
+    if(!ghost) return;
+    const p = ghostAnchor(rawX, rawY);
+    const res = insertElements(ghost.list, p.x, p.y);
+    if(mode==='stand'){
+      const n = standConfig.count * (standConfig.doubleRow ? 2 : 1);
+      flashHint(`Colocado${n>1?'s':''} ${n} stand${n>1?'s':''} de ${standConfig.W}x${standConfig.D}. ${res.shared ? res.shared+' piezas ya existían y no se han duplicado.' : ''}`);
+    } else {
+      flashHint(`Pegados ${res.added} elementos. ${res.shared ? res.shared+' coincidían con lo ya dibujado y no se han duplicado.' : ''}`);
+    }
+    return;
+  }
+
+  if(mode==='mamparas' && selected.mamparas==='toggleWall'){
+    toggleWallAt(rawX, rawY);
+    return;
+  }
 
   if(kind==='punto'){
     const mat = matById(selected[mode]);
@@ -1567,7 +1625,7 @@ function renderLegend(){
         swatchHtml = `<span style="color:${m.color};font-weight:900;">${iconFor(m)}</span>`;
       } else {
         qtyLabel = qty + ' ud.';
-        swatchHtml = `<span class="swatch" style="background:${m.color}"></span>`;
+        swatchHtml = swatchFor(m);
       }
       html += rowHtml(swatchHtml, m.name, qtyLabel, false);
     }
@@ -1753,6 +1811,368 @@ function generatePdf(){
   });
 }
 document.getElementById('pdfBtn').addEventListener('click', generatePdf);
+
+// =====================================================================
+// STANDS EN LÍNEA PREFABRICADOS + COPIAR / PEGAR SIN DUPLICAR MATERIAL
+// =====================================================================
+// Reglas validadas con Diego (oct 2026), todas en metros, con el stand visto
+// en planta: pared trasera arriba (y=0) y frente abierto abajo (y=fondo).
+//  - Frente = número mayor (2..10), fondo = número menor (2..4).
+//  - Postes 2,5 m cada metro en trasera y laterales; postes 3 m en el frente
+//    (esquinas y uniones entre cartelas).
+//  - Cartelas: las más grandes posibles (5=3+2, 6=3+3, 7=3+4, 8=4+4, 9=3+3+3, 10=3+4+3).
+//  - Tiranta paralela a la cartela a 1 m del frente, con las mismas medidas que las cartelas.
+//  - 1 cartela: una tiranta (o mainel 1 m) hacia la trasera, en el poste a 1 m del lado
+//    del cuadro (en el 4x4, centrada), con el LED en el cruce. Más de 12 m² → 2.º LED
+//    en el centro de la tiranta hacia la trasera.
+//  - Varias cartelas: desde cada poste 3 m intermedio, tiranta hasta la trasera (sujeta el
+//    empalme). Tramo de 4 m (más de 3 m sin apoyo) → tiranta extra hacia la trasera a 1 m
+//    del lado del cuadro, con el LED en el cruce. Tramos de 2 y 3 m → LED en el centro.
+//  - Un cuadro por stand, en la esquina trasera del lado del cuadro (izquierda).
+//  - Laterales en 2C; la trasera se elige 1C o 2C antes de colocar. Al coincidir dos
+//    paredes (medianera o espalda con espalda) se queda una sola y pasa a 2C.
+// Los maineles de cada mampara, las tirantas de 2 m de cada cartela de 2 m y los ganchos
+// ya los suma la leyenda por su cuenta, así que el stand solo coloca las piezas.
+const STAND_CARTELAS = {2:[2],3:[3],4:[4],5:[3,2],6:[3,3],7:[3,4],8:[4,4],9:[3,3,3],10:[3,4,3]};
+const CARTELA_BY_LEN = {2:'l6',3:'l7',4:'l8'};
+const TIRANTA_BY_LEN = {1:'m1',2:'l1',3:'l2',4:'l3'};
+const QUICK_SIZES = [[2,2],[3,2],[3,3],[4,2],[4,3],[4,4],[6,3],[8,3]];
+const ORIENT_LABEL = ['frente abajo','frente a la izquierda','frente arriba','frente a la derecha'];
+
+let standConfig = { W:3, D:3, backWall:'l4b', count:1, doubleRow:false, rot:0 };
+let ghost = null;     // {list, svg} — vista previa que sigue al ratón
+let ghostPos = null;  // {x,y} en unidades del plano
+let clipboard = null; // elementos copiados, con la esquina en 0,0
+let pasteBuffer = null;
+
+function generateStand(W, D, backMat){
+  const U = UNIT, out = [];
+  const P = (matId,x,y)=>out.push({type:'punto', matId, x:x*U, y:y*U});
+  const L = (matId,x1,y1,x2,y2)=>out.push({type:'linea', matId, x1:x1*U, y1:y1*U, x2:x2*U, y2:y2*U});
+  const segs = STAND_CARTELAS[W] || [W];
+  const b = [0]; segs.forEach(s=>b.push(b[b.length-1]+s));
+
+  // Paredes: trasera según elección, laterales siempre 2C. Un elemento por metro.
+  for(let x=0;x<W;x++) L(backMat, x,0, x+1,0);
+  for(let y=0;y<D;y++){ L('l4b', 0,y, 0,y+1); L('l4b', W,y, W,y+1); }
+
+  // Postes
+  for(let x=0;x<=W;x++) P('p2', x,0);
+  for(let y=1;y<D;y++){ P('p2', 0,y); P('p2', W,y); }
+  b.forEach(x=>P('p1', x,D));
+
+  // Cartelas
+  segs.forEach((s,i)=>L(CARTELA_BY_LEN[s], b[i],D, b[i+1],D));
+
+  // Tirantas y LED
+  const leds = [];
+  if(segs.length===1){
+    const p = (W===4 && D===4) ? 2 : 1;
+    L(TIRANTA_BY_LEN[W], 0,D-1, W,D-1);
+    L(TIRANTA_BY_LEN[D-1], p,D-1, p,0);
+    leds.push([p, D-1]);
+    if(W*D>12) leds.push([p, (D-1)/2]);
+  } else {
+    segs.forEach((s,i)=>{
+      L(TIRANTA_BY_LEN[s], b[i],D-1, b[i+1],D-1);
+      if(s>3){
+        const x = b[i]+1;
+        L(TIRANTA_BY_LEN[D-1], x,D-1, x,0);
+        leds.push([x, D-1]);
+      } else {
+        leds.push([b[i]+s/2, D-1]);
+      }
+    });
+    for(let i=1;i<b.length-1;i++) L(TIRANTA_BY_LEN[D], b[i],D, b[i],0);
+  }
+  leds.forEach(([x,y])=>P('p3', x,y));
+
+  // Cuadro en la esquina trasera del lado del cuadro
+  P('p4', 0.5, 0.5);
+  return out;
+}
+
+function mapCoords(el, fn){
+  const c = JSON.parse(JSON.stringify(el));
+  if(c.type==='punto' || c.type==='texto'){
+    const p = fn(c.x, c.y); c.x = p[0]; c.y = p[1];
+  } else {
+    const a = fn(c.x1, c.y1), z = fn(c.x2, c.y2);
+    c.x1 = a[0]; c.y1 = a[1]; c.x2 = z[0]; c.y2 = z[1];
+    if(c.type==='area'){
+      const x1=Math.min(c.x1,c.x2), x2=Math.max(c.x1,c.x2), y1=Math.min(c.y1,c.y2), y2=Math.max(c.y1,c.y2);
+      Object.assign(c, {x1,x2,y1,y2});
+    }
+  }
+  return c;
+}
+function listBounds(list){
+  let minX=Infinity, minY=Infinity, maxX=-Infinity, maxY=-Infinity;
+  list.forEach(el=>{
+    const xs = (el.type==='punto'||el.type==='texto') ? [el.x] : [el.x1, el.x2];
+    const ys = (el.type==='punto'||el.type==='texto') ? [el.y] : [el.y1, el.y2];
+    xs.forEach(v=>{ minX=Math.min(minX,v); maxX=Math.max(maxX,v); });
+    ys.forEach(v=>{ minY=Math.min(minY,v); maxY=Math.max(maxY,v); });
+  });
+  return {minX, minY, maxX, maxY};
+}
+// Lleva la esquina superior izquierda al cruce 0,0 sin descolocar lo que va centrado en celda.
+function normalizeList(list){
+  if(!list.length) return list;
+  const b = listBounds(list);
+  const ox = Math.floor(b.minX/UNIT + 1e-6)*UNIT, oy = Math.floor(b.minY/UNIT + 1e-6)*UNIT;
+  return list.map(el=>mapCoords(el, (x,y)=>[x-ox, y-oy]));
+}
+// Giro de 90° en sentido horario, tantas veces como se indique.
+function rotateList(list, times){
+  let l = list;
+  for(let i=0;i<((times%4)+4)%4;i++) l = l.map(el=>mapCoords(el, (x,y)=>[-y, x]));
+  return normalizeList(l);
+}
+
+function buildStandGroup(){
+  const {W, D, backWall, count, doubleRow, rot} = standConfig;
+  const one = generateStand(W, D, backWall);
+  const list = [];
+  for(let i=0;i<count;i++){
+    const off = i*W*UNIT;
+    one.forEach(el=>list.push(mapCoords(el, (x,y)=>[x+off, y])));
+    if(doubleRow){
+      // Segunda fila espalda con espalda: el mismo stand girado 180°, compartiendo la trasera.
+      one.forEach(el=>list.push(mapCoords(el, (x,y)=>[W*UNIT - x + off, -y])));
+    }
+  }
+  return rotateList(list, rot);
+}
+
+function refreshGhost(){
+  let list = null;
+  if(mode==='stand') list = buildStandGroup();
+  else if(mode==='pegar' && pasteBuffer) list = pasteBuffer;
+  if(!list || !list.length){ ghost = null; render(); return; }
+  const b = listBounds(list);
+  const w = Math.max(b.maxX, UNIT), h = Math.max(b.maxY, UNIT);
+  let s = `<rect x="0" y="0" width="${w}" height="${h}" fill="rgba(245,197,24,0.08)" stroke="#f5c518" stroke-width="1" stroke-dasharray="5,4"/>`;
+  list.forEach(el=>{ s += drawElement(Object.assign({}, el, {id:''}), false); });
+  ghost = {list, svg:s};
+  render();
+}
+
+function ghostAnchor(rawX, rawY){
+  return { x: Math.max(0, snap(rawX)), y: Math.max(0, snap(rawY)) };
+}
+
+function ensureGridFits(maxX, maxY){
+  const needW = Math.ceil(maxX/UNIT) + 1, needH = Math.ceil(maxY/UNIT) + 1;
+  if(needW<=COLS && needH<=ROWS) return;
+  COLS = Math.max(COLS, needW); ROWS = Math.max(ROWS, needH);
+  document.getElementById('gridW').value = COLS;
+  document.getElementById('gridH').value = ROWS;
+  applyZoomStyle();
+}
+
+function samePt(a,b){ return Math.abs(a-b) < 1; }
+function sameSegment(a, b){
+  return (samePt(a.x1,b.x1) && samePt(a.y1,b.y1) && samePt(a.x2,b.x2) && samePt(a.y2,b.y2)) ||
+         (samePt(a.x1,b.x2) && samePt(a.y1,b.y2) && samePt(a.x2,b.x1) && samePt(a.y2,b.y1));
+}
+function isMampara(el){ const m = matById(el.matId); return !!(m && m.category==='mamparas'); }
+
+// Inserta una lista de elementos en la posición indicada sin duplicar material:
+//  - poste sobre poste → se queda uno (si uno de los dos es de 3 m, queda el de 3 m)
+//  - mampara sobre mampara → se queda una y pasa a 2C (es una medianera o espalda con espalda)
+//  - cualquier otra pieza idéntica en el mismo sitio → se queda una
+function insertElements(list, ox, oy){
+  snapshotUndo();
+  let added = 0, shared = 0;
+  const placed = list.map(el=>mapCoords(el, (x,y)=>[x+ox, y+oy]));
+  placed.forEach(el=>{
+    if(el.type==='punto'){
+      const nm = matById(el.matId);
+      const hit = elements.find(e=>e.type==='punto' && samePt(e.x,el.x) && samePt(e.y,el.y) &&
+        (e.matId===el.matId || (nm && nm.isPoste && matById(e.matId) && matById(e.matId).isPoste)));
+      if(hit){
+        if(el.matId==='p1' && hit.matId==='p2') hit.matId = 'p1';
+        shared++; return;
+      }
+    } else if(el.type==='linea'){
+      if(isMampara(el)){
+        const hit = elements.find(e=>e.type==='linea' && isMampara(e) && sameSegment(e, el));
+        if(hit){ hit.matId = 'l4b'; shared++; return; }
+      } else {
+        const hit = elements.find(e=>e.type==='linea' && e.matId===el.matId && sameSegment(e, el));
+        if(hit){ shared++; return; }
+      }
+    } else if(el.type==='area'){
+      const hit = elements.find(e=>e.type==='area' && e.matId===el.matId &&
+        samePt(e.x1,el.x1) && samePt(e.y1,el.y1) && samePt(e.x2,el.x2) && samePt(e.y2,el.y2));
+      if(hit){ shared++; return; }
+    }
+    el.id = 'e'+(elIdCounter++);
+    elements.push(el);
+    added++;
+  });
+  const b = listBounds(placed);
+  ensureGridFits(b.maxX, b.maxY);
+  render(); renderLegend();
+  return {added, shared};
+}
+
+// ---------- Cambiar mamparas entre 1C y 2C ----------
+function distToSegment(px,py, x1,y1,x2,y2){
+  const dx=x2-x1, dy=y2-y1, L2=dx*dx+dy*dy;
+  let t = L2 ? ((px-x1)*dx+(py-y1)*dy)/L2 : 0;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(px-(x1+t*dx), py-(y1+t*dy));
+}
+function toggleWallAt(rawX, rawY){
+  let best=null, bestD=Infinity;
+  elements.forEach(e=>{
+    if(e.type!=='linea' || !isMampara(e)) return;
+    const d = distToSegment(rawX,rawY, e.x1,e.y1,e.x2,e.y2);
+    if(d<bestD){ bestD=d; best=e; }
+  });
+  if(!best || bestD > UNIT*0.4){ flashHint('Clica encima de una mampara.'); return; }
+  snapshotUndo();
+  best.matId = best.matId==='l4a' ? 'l4b' : 'l4a';
+  render(); renderLegend();
+  flashHint('Mampara cambiada a '+(best.matId==='l4a'?'1C':'2C')+'.');
+}
+function setSelectedWalls(matId){
+  const walls = elements.filter(e=>selectedIds.has(e.id) && e.type==='linea' && isMampara(e));
+  if(!walls.length){ flashHint('No hay mamparas en la selección.'); return; }
+  snapshotUndo();
+  walls.forEach(e=>{ e.matId = matId; });
+  render(); renderLegend();
+  flashHint(walls.length+' metro(s) de mampara pasados a '+(matId==='l4a'?'1C':'2C')+'.');
+}
+
+// ---------- Copiar / pegar ----------
+function copySelection(){
+  const sel = elements.filter(el=>selectedIds.has(el.id));
+  if(!sel.length){ flashHint('Selecciona algo antes de copiar.'); return; }
+  clipboard = normalizeList(sel.map(el=>{ const c = JSON.parse(JSON.stringify(el)); delete c.id; return c; }));
+  flashHint('Copiados '+sel.length+' elementos. Ctrl+V (o el botón Pegar) para colocarlos.');
+}
+function startPaste(){
+  if(!clipboard){ flashHint('Primero selecciona algo con ↕ Seleccionar y cópialo con Ctrl+C.'); return; }
+  pasteBuffer = clipboard.map(el=>JSON.parse(JSON.stringify(el)));
+  setMode('pegar');
+}
+function rotateGhost(){
+  if(mode==='stand'){
+    standConfig.rot = (standConfig.rot+1)%4;
+    renderMatList();
+  } else if(mode==='pegar' && pasteBuffer){
+    pasteBuffer = rotateList(pasteBuffer, 1);
+  }
+  refreshGhost();
+}
+
+document.addEventListener('keydown', (e)=>{
+  const tag = (e.target && e.target.tagName) || '';
+  if(tag==='INPUT' || tag==='SELECT' || tag==='TEXTAREA') return;
+  const k = (e.key||'').toLowerCase();
+  if((e.ctrlKey||e.metaKey) && k==='c'){
+    if(mode==='seleccionar' && selectedIds.size){ e.preventDefault(); copySelection(); }
+    return;
+  }
+  if((e.ctrlKey||e.metaKey) && k==='v'){
+    if(clipboard){ e.preventDefault(); startPaste(); }
+    return;
+  }
+  if(e.ctrlKey || e.metaKey || e.altKey) return;
+  if(k==='r' && (mode==='stand' || mode==='pegar')){ e.preventDefault(); rotateGhost(); return; }
+  if(e.key==='Escape'){
+    if(mode==='pegar'){ setMode('seleccionar'); }
+    else if(lineStart){ lineStart = null; render(); updateHint(); }
+    return;
+  }
+  if((e.key==='1' || e.key==='2') && mode==='seleccionar' && selectedIds.size){
+    e.preventDefault();
+    setSelectedWalls(e.key==='1' ? 'l4a' : 'l4b');
+  }
+});
+
+// ---------- Paneles de opciones ----------
+function tgroupNode(title, node){
+  const g = document.createElement('div'); g.className = 'tgroup';
+  const l = document.createElement('label'); l.textContent = title;
+  g.appendChild(l); g.appendChild(node);
+  return g;
+}
+function chipNode(text, active, onclick){
+  const c = document.createElement('div');
+  c.className = 'matchip' + (active ? ' active' : '');
+  c.textContent = text; c.onclick = onclick;
+  return c;
+}
+
+function renderStandPanel(list, label){
+  label.textContent = 'Stand en línea';
+  const row = document.createElement('div'); row.className = 'standrow';
+
+  const selW = document.createElement('select');
+  for(let w=2; w<=10; w++){ const o=document.createElement('option'); o.value=w; o.textContent=w+' m'; if(w===standConfig.W) o.selected=true; selW.appendChild(o); }
+  selW.onchange = ()=>{ standConfig.W = +selW.value; if(standConfig.D>standConfig.W) standConfig.D = standConfig.W; renderMatList(); refreshGhost(); };
+  row.appendChild(tgroupNode('Frente', selW));
+
+  const selD = document.createElement('select');
+  for(let d=2; d<=Math.min(4, standConfig.W); d++){ const o=document.createElement('option'); o.value=d; o.textContent=d+' m'; if(d===standConfig.D) o.selected=true; selD.appendChild(o); }
+  selD.onchange = ()=>{ standConfig.D = +selD.value; renderMatList(); refreshGhost(); };
+  row.appendChild(tgroupNode('Fondo', selD));
+
+  const quick = document.createElement('div'); quick.className = 'matlist';
+  QUICK_SIZES.forEach(([w,d])=>{
+    quick.appendChild(chipNode(w+'x'+d, standConfig.W===w && standConfig.D===d, ()=>{
+      standConfig.W = w; standConfig.D = d; renderMatList(); refreshGhost();
+    }));
+  });
+  row.appendChild(tgroupNode('Medidas rápidas', quick));
+
+  const back = document.createElement('div'); back.className = 'matlist';
+  [['l4b','2C'],['l4a','1C']].forEach(([id,txt])=>{
+    back.appendChild(chipNode(txt, standConfig.backWall===id, ()=>{ standConfig.backWall = id; renderMatList(); refreshGhost(); }));
+  });
+  row.appendChild(tgroupNode('Pared trasera', back));
+
+  const cnt = document.createElement('input');
+  cnt.type = 'number'; cnt.min = 1; cnt.max = 40; cnt.step = 1; cnt.value = standConfig.count;
+  cnt.addEventListener('input', ()=>{
+    const v = Math.max(1, Math.min(40, parseInt(cnt.value,10)||1));
+    standConfig.count = v; refreshGhost();
+  });
+  const dbl = document.createElement('label'); dbl.className = 'chk';
+  const dblIn = document.createElement('input'); dblIn.type = 'checkbox'; dblIn.checked = standConfig.doubleRow;
+  dblIn.onchange = ()=>{ standConfig.doubleRow = dblIn.checked; refreshGhost(); };
+  dbl.appendChild(dblIn); dbl.appendChild(document.createTextNode('Doble hilera (espalda con espalda)'));
+  const rowBox = document.createElement('div'); rowBox.style.cssText = 'display:flex;gap:10px;align-items:center;';
+  rowBox.appendChild(cnt); rowBox.appendChild(dbl);
+  row.appendChild(tgroupNode('Stands en hilera', rowBox));
+
+  const rotBox = document.createElement('div'); rotBox.style.cssText = 'display:flex;align-items:center;';
+  const rotBtn = document.createElement('button'); rotBtn.className = 'smallbtn'; rotBtn.textContent = '⟳ Girar (R)';
+  rotBtn.onclick = rotateGhost;
+  const ori = document.createElement('span'); ori.className = 'orient'; ori.textContent = ORIENT_LABEL[standConfig.rot];
+  rotBox.appendChild(rotBtn); rotBox.appendChild(ori);
+  row.appendChild(tgroupNode('Orientación', rotBox));
+
+  list.appendChild(row);
+}
+
+function renderPastePanel(list, label){
+  label.textContent = 'Pegar';
+  const row = document.createElement('div'); row.className = 'standrow';
+  const info = document.createElement('span');
+  info.style.cssText = 'color:var(--muted);font-size:11.5px;';
+  info.textContent = (pasteBuffer ? pasteBuffer.length : 0) + ' elementos copiados. Clic en el plano para pegar; puedes pegar varias veces seguidas.';
+  const rotBtn = document.createElement('button'); rotBtn.className = 'smallbtn'; rotBtn.textContent = '⟳ Girar (R)';
+  rotBtn.onclick = rotateGhost;
+  const endBtn = document.createElement('button'); endBtn.className = 'smallbtn'; endBtn.textContent = 'Terminar (Esc)';
+  endBtn.onclick = ()=>setMode('seleccionar');
+  row.appendChild(info); row.appendChild(rotBtn); row.appendChild(endBtn);
+  list.appendChild(row);
+}
 
 applyZoomStyle();
 renderMatList();
