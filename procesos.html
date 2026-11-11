@@ -196,7 +196,7 @@ function cdTxt(d){if(d==null)return '';if(d<0)return '−'+(-d)+'d';if(d===0)ret
 function cdCls(d,hot=1,warn=3){if(d==null)return '';if(d<0)return 'late';if(d<=hot)return 'hot';if(d<=warn)return 'warn';return 'ok';}
 
 /* ---------- modelo ---------- */
-let projects=[]; let view='list'; let editMode=false; let showArch=false; let newTipo='stand';
+let newName=''; let projects=[]; let view='list'; let editMode=false; let showArch=false; let newTipo='stand';
 const dirty=new Set(); let saveTimer=null; let delArm=null;
 
 function stepDue(p,s){return s.m&&p.montaje?p.montaje:s.due;}
@@ -242,7 +242,7 @@ async function load(){
 function addProject(){
   const inp=document.getElementById('newName');const name=inp.value.trim();
   if(!name){inp.focus();return;}
-  const p={id:uid(),name,tipo:newTipo,montaje:'',steps:mkSteps(newTipo),notes:'',archived:false};
+  newName='';const p={id:uid(),name,tipo:newTipo,montaje:'',steps:mkSteps(newTipo),notes:'',archived:false};
   projects.push(p);touch(p);view=p.id;editMode=false;render();
 }
 function P(){return projects.find(p=>p.id===view);}
@@ -279,7 +279,7 @@ function delProject(){
   delArm=null;const p=P();projects=projects.filter(x=>x!==p);dirty.delete(p.id);view='list';render();
   if(sb)sb.from('procesos').delete().eq('id',p.id).then(({error})=>{setStatus(error?'Error al borrar: '+error.message:'Guardado ✓',!!error);});
 }
-function open(id){view=id;editMode=false;delArm=null;window.scrollTo(0,0);render();}
+function openProj(id){view=id;editMode=false;delArm=null;window.scrollTo(0,0);render();}
 function back(){view='list';editMode=false;delArm=null;render();}
 
 function confetti(){
@@ -311,14 +311,14 @@ function viewList(){
   // qué toca hoy
   const todo=act.map(p=>({p,s:nextStep(p)})).filter(x=>x.s);
   let h=`<div class="panel newbar"><h2>Nuevo proyecto</h2><div class="row">
-    <input type="text" id="newName" placeholder="Nombre del stand o feria…" maxlength="80" onkeydown="if(event.key==='Enter')addProject()">
+    <input type="text" id="newName" value="${esc(newName)}" oninput="newName=this.value" placeholder="Nombre del stand o feria…" maxlength="80" onkeydown="if(event.key==='Enter')addProject()">
     <div class="seg"><button class="${newTipo==='stand'?'on':''}" onclick="newTipo='stand';render()">Stand</button><button class="${newTipo==='feria'?'on':''}" onclick="newTipo='feria';render()">Feria</button></div>
     <button class="btn primary" onclick="addProject()">+ Crear</button></div>
     <div class="sub" style="margin:8px 0 0">${newTipo==='stand'?'Stand: plano → presupuesto → render → gráficas → cuentas de material → planos → palet → montaje.':'Feria: rótulos → plano → cuentas de material → hacer rótulos → montaje.'} Los pasos se pueden editar después.</div></div>`;
   h+=`<div class="panel"><h2>Qué toca ahora <span class="hint">siguiente paso de cada proyecto, lo más urgente primero</span></h2>`;
   if(!todo.length)h+=`<div class="empty">Nada pendiente. Crea un proyecto arriba para empezar.</div>`;
   else h+=`<div class="todo">`+todo.map(({p,s})=>{const d=daysTo(stepDue(p,s));const dm=daysTo(p.montaje);
-    return `<div class="it" onclick="open('${p.id}')"><span class="p">${esc(p.name||'(sin nombre)')}</span><span class="s">${esc(s.name)}</span>
+    return `<div class="it" onclick="openProj('${p.id}')"><span class="p">${esc(p.name||'(sin nombre)')}</span><span class="s">${esc(s.name)}</span>
     ${d!=null?`<span class="pill ${cdCls(d)}">${cdTxt(d)}</span>`:''}${dm!=null?`<span class="pill ${cdCls(dm,3,7)}" title="Montaje">⚑ ${cdTxt(dm)}</span>`:''}</div>`;}).join('')+`</div>`;
   h+=`</div>`;
   h+=`<div class="panel"><h2>Proyectos en curso <span class="hint">${act.length}</span></h2>`;
@@ -330,7 +330,7 @@ function viewList(){
 }
 function card(p){
   const u=urgency(p);const dm=daysTo(p.montaje);const ns=nextStep(p);const fin=isComplete(p);
-  return `<div class="card ${u==='fin'?'':u}" onclick="open('${p.id}')">
+  return `<div class="card ${u==='fin'?'':u}" onclick="openProj('${p.id}')">
     <div class="row" style="justify-content:space-between"><span class="tag">${TIPO_LBL[p.tipo]||p.tipo}</span>
       ${fin?'<span class="pill done">✓ listo</span>':dm!=null?`<span class="pill ${cdCls(dm,3,7)}">⚑ montaje ${cdTxt(dm)}</span>`:'<span class="pill">sin fecha de montaje</span>'}</div>
     <div class="t">${esc(p.name||'(sin nombre)')}</div>
@@ -388,7 +388,7 @@ function viewProject(p){
 }
 function render(){
   const app=document.getElementById('app');
-  const keep=document.activeElement&&document.activeElement.id==='newName'?document.activeElement.value:null;
+  const keep=null;
   const p=view!=='list'?P():null;
   if(view!=='list'&&!p)view='list';
   app.innerHTML=(view==='list'||!p)?viewList():viewProject(p);
