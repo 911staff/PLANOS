@@ -1051,7 +1051,77 @@ function renderMatList(){
     formWrap.appendChild(input);
     formWrap.appendChild(btn);
     list.appendChild(formWrap);
+
+    // Total de m² editable a mano para el color seleccionado, sin necesidad de dibujarlo.
+    const totalWrap = document.createElement('div');
+    totalWrap.style.cssText = 'display:flex;gap:6px;align-items:center;margin-left:12px;';
+    const totalLabel = document.createElement('span');
+    totalLabel.id = 'moquetaTotalLabel';
+    totalLabel.style.cssText = 'font-size:10.5px;color:var(--muted);text-transform:uppercase;';
+    const totalInput = document.createElement('input');
+    totalInput.type = 'text';
+    totalInput.inputMode = 'decimal';
+    totalInput.id = 'moquetaTotalInput';
+    totalInput.placeholder = '0';
+    totalInput.style.width = '80px';
+    totalInput.title = 'Escribe los m² totales de esta moqueta (con o sin dibujarla). Puedes usar coma o punto.';
+    totalInput.addEventListener('change', applyMoquetaTotal);
+    totalInput.addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); applyMoquetaTotal(); totalInput.blur(); } });
+    const totalUnit = document.createElement('span');
+    totalUnit.style.cssText = 'font-size:12px;color:var(--muted);';
+    totalUnit.textContent = 'm²';
+    totalWrap.appendChild(totalLabel);
+    totalWrap.appendChild(totalInput);
+    totalWrap.appendChild(totalUnit);
+    list.appendChild(totalWrap);
+    refreshMoquetaTotalField();
   }
+}
+
+// ---------- m² de moqueta: dibujados + ajuste manual ----------
+function drawnAreaM2(matId){
+  return elements
+    .filter(e=>e.matId===matId && e.type==='area')
+    .reduce((sum,e)=> sum + ((e.x2-e.x1)/UNIT) * ((e.y2-e.y1)/UNIT), 0);
+}
+// Total real de un color de moqueta = lo dibujado + el ajuste manual (nunca negativo).
+function totalAreaM2(m){
+  return Math.max(0, drawnAreaM2(m.id) + (m.manualM2 || 0));
+}
+function fmtM2(v){
+  return (Math.round(v*100)/100).toString().replace('.', ',');
+}
+function refreshMoquetaTotalField(){
+  const input = document.getElementById('moquetaTotalInput');
+  const label = document.getElementById('moquetaTotalLabel');
+  if(!input) return;
+  const m = areaMaterials.find(x=>x.id===selected.moqueta);
+  if(!m){ input.value=''; return; }
+  if(label) label.textContent = 'Total m² · ' + m.name;
+  if(document.activeElement !== input){
+    const t = totalAreaM2(m);
+    input.value = t>0 ? fmtM2(t) : '';
+  }
+}
+function applyMoquetaTotal(){
+  const input = document.getElementById('moquetaTotalInput');
+  const m = areaMaterials.find(x=>x.id===selected.moqueta);
+  if(!input || !m) return;
+  const raw = input.value.trim().replace(',', '.');
+  if(raw===''){
+    m.manualM2 = 0;
+  } else {
+    const v = parseFloat(raw);
+    if(isNaN(v) || v<0){
+      flashHint('Escribe un número de m² válido (ej. 48 o 48,5).');
+      refreshMoquetaTotalField();
+      return;
+    }
+    m.manualM2 = Math.round((v - drawnAreaM2(m.id))*100)/100;
+  }
+  renderLegend();
+  refreshMoquetaTotalField();
+  flashHint('Total de ' + m.name + ': ' + fmtM2(totalAreaM2(m)) + ' m².');
 }
 
 function baseHintForMode(){
@@ -1622,7 +1692,8 @@ function renderLegend(){
   const emptyMsg = document.getElementById('legendEmpty');
   body.innerHTML = '';
 
-  if(elements.length===0){ emptyMsg.style.display='block'; return; }
+  const hasManualArea = areaMaterials.some(m=> totalAreaM2(m) > 0);
+  if(elements.length===0 && !hasManualArea){ emptyMsg.style.display='block'; refreshMoquetaTotalField(); return; }
   emptyMsg.style.display='none';
 
   const drawnCounts = {};
@@ -1681,10 +1752,10 @@ function renderLegend(){
 
   // Filas de moqueta: una por cada color creado que se haya usado en el plano
   areaMaterials.forEach(m=>{
-    const totalArea = areaTotals[m.id] || 0;
+    const totalArea = totalAreaM2(m); // dibujado + ajuste manual
     if(totalArea>0){
       const swatchHtml = swatchFor(m);
-      html += rowHtml(swatchHtml, m.name, totalArea.toFixed(1) + ' m²', false, packNote(MOQUETA_PACK, totalArea, ' m²'));
+      html += rowHtml(swatchHtml, m.name, fmtM2(totalArea) + ' m²', false, packNote(MOQUETA_PACK, totalArea, ' m²'));
     }
   });
 
@@ -1708,6 +1779,7 @@ function renderLegend(){
   }
 
   body.innerHTML = html;
+  refreshMoquetaTotalField();
 }
 
 function getDrawingBounds(){
@@ -1783,7 +1855,7 @@ function doPrint(mode){
 }
 
 document.getElementById('printBtn').addEventListener('click', function(){
-  if(elements.length===0){ flashHint('Dibuja algo antes de imprimir.'); return; }
+  if(elements.length===0 && !areaMaterials.some(m=> totalAreaM2(m) > 0)){ flashHint('Dibuja algo antes de imprimir.'); return; }
   document.getElementById('printChoiceOverlay').classList.remove('hidden');
 });
 
